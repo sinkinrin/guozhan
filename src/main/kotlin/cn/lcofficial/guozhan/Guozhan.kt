@@ -71,6 +71,7 @@ class Guozhan : JavaPlugin() {
         WarListener().register()
         cn.lcofficial.guozhan.listener.TaxRegionListener().register()
         cn.lcofficial.guozhan.listener.CoreListener().register()
+        cn.lcofficial.guozhan.listener.RandomSpawnListener().register()
         
         // 启动经济任务
         EconomyTasks.startTasks()

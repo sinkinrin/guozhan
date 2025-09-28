@@ -1,7 +1,9 @@
 package cn.lcofficial.guozhan.manager
 
 import cn.lcofficial.guozhan.Guozhan
+import cn.lcofficial.guozhan.config.Config
 import cn.lcofficial.guozhan.data.Country
+import cn.lcofficial.guozhan.data.RelationType
 import cn.lcofficial.guozhan.pluginLogger
 import org.bukkit.Bukkit
 import org.bukkit.boss.BarColor
@@ -11,6 +13,16 @@ import org.bukkit.entity.Player
 import org.bukkit.scheduler.BukkitTask
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
+
+/**
+ * BossBar 显示信息
+ */
+data class BossBarDisplayInfo(
+    val country: Country,
+    val attackerCountry: Country?,
+    val lastUpdateTime: Long = System.currentTimeMillis(),
+    val displayPlayers: Set<UUID> = emptySet()
+)
 
 /**
  * 国家核心管理器
@@ -29,7 +41,10 @@ object CoreManager {
     
     // 每个国家的BossBar显示
     private val countryBossBars = ConcurrentHashMap<UUID, BossBar>()
-    
+
+    // BossBar 显示信息缓存
+    private val bossBarDisplayCache = ConcurrentHashMap<UUID, BossBarDisplayInfo>()
+
     // 核心血量回复任务
     private var regenTask: BukkitTask? = null
     
@@ -80,10 +95,14 @@ object CoreManager {
         
         // 对核心造成伤害
         val destroyed = country.damageCore(DAMAGE_PER_ATTACK)
-        
-        // 更新BossBar显示
-        updateBossBar(country)
-        
+
+        // 获取攻击者国家
+        val attackerUser = UserManager.getUser(player.uniqueId)
+        val attackerCountry = attackerUser?.country
+
+        // 更新BossBar显示（传入攻击者国家信息）
+        updateBossBar(country, attackerCountry)
+
         // 向相关玩家发送消息
         val attackerMessage = "§c你攻击了 ${country.name} 的核心！剩余血量：${country.coreHealth}/1000"
         player.sendMessage(attackerMessage)
@@ -143,23 +162,37 @@ object CoreManager {
     
     /**
      * 更新国家的BossBar显示
+     * @param country 被攻击的国家
+     * @param attackerCountry 攻击者国家（可选）
      */
-    fun updateBossBar(country: Country) {
+    fun updateBossBar(country: Country, attackerCountry: Country? = null) {
+        // 检查是否启用 BossBar
+        if (!Config.BossBar.enabled) {
+            return
+        }
+
+        // 检查是否应该显示 BossBar
+        if (!shouldDisplayBossBar(country, attackerCountry)) {
+            removeBossBar(country)
+            return
+        }
+
         val bossBar = getOrCreateBossBar(country)
-        
+
         // 更新标题和进度
-        bossBar.setTitle("${country.name} 核心血量")
+        val titleFormat = Config.BossBar.titleFormat.replace("{country}", country.name)
+        bossBar.setTitle(titleFormat)
         bossBar.progress = country.coreHealth.toDouble() / 1000.0
-        
+
         // 根据血量调整颜色
         bossBar.color = when {
             country.coreHealth > 700 -> BarColor.GREEN
             country.coreHealth > 300 -> BarColor.YELLOW
             else -> BarColor.RED
         }
-        
-        // 显示给相关玩家
-        updateBossBarPlayers(country, bossBar)
+
+        // 异步更新显示玩家
+        updateBossBarPlayersAsync(country, attackerCountry, bossBar)
     }
     
     /**
@@ -176,37 +209,93 @@ object CoreManager {
     }
     
     /**
-     * 更新BossBar的显示对象
+     * 检查是否应该显示 BossBar
+     * @param country 被攻击的国家
+     * @param attackerCountry 攻击者国家
+     * @return 是否显示
      */
-    private fun updateBossBarPlayers(country: Country, bossBar: BossBar) {
-        // 清除所有玩家
-        bossBar.removeAll()
-        
+    private fun shouldDisplayBossBar(country: Country, attackerCountry: Country?): Boolean {
         // 如果核心已被摧毁，不显示BossBar
         if (country.isCoreDestroyed()) {
-            return
+            return false
         }
-        
-        // 显示给国家成员
-        country.members.forEach { member ->
-            val player = Bukkit.getPlayer(member.uniqueId)
-            if (player != null && player.isOnline) {
-                bossBar.addPlayer(player)
+
+        // 如果没有攻击者国家，只显示给被攻击国家成员
+        if (attackerCountry == null) {
+            return Config.BossBar.showToDefenderCountry
+        }
+
+        // 检查是否处于战争或敌对状态
+        val relation = DiplomacyManager.getRelation(country, attackerCountry)
+        return relation.relationType == RelationType.WAR || relation.relationType == RelationType.HOSTILE
+    }
+
+    /**
+     * 异步更新BossBar的显示对象
+     */
+    private fun updateBossBarPlayersAsync(country: Country, attackerCountry: Country?, bossBar: BossBar) {
+        Bukkit.getScheduler().runTaskAsynchronously(Guozhan.instance) {
+            val displayPlayers = getDisplayPlayers(country, attackerCountry)
+
+            // 回到主线程更新 BossBar
+            Bukkit.getScheduler().runTask(Guozhan.instance) {
+                updateBossBarSync(country, bossBar, displayPlayers)
             }
         }
-        
-        // 显示给附近的敌对玩家（在核心附近的玩家）
-        val coreLocation = country.getCoreLocation()
-        if (coreLocation != null) {
-            coreLocation.world.players.forEach { player ->
-                if (player.location.distance(coreLocation) <= 50) { // 50格范围内
-                    val playerUser = UserManager.getUser(player.uniqueId)
-                    if (playerUser?.country?.id != country.id) {
-                        bossBar.addPlayer(player)
-                    }
+    }
+
+    /**
+     * 获取应该显示 BossBar 的玩家列表
+     * @param country 被攻击的国家
+     * @param attackerCountry 攻击者国家
+     * @return 玩家列表
+     */
+    private fun getDisplayPlayers(country: Country, attackerCountry: Country?): List<Player> {
+        val players = mutableListOf<Player>()
+
+        // 显示给被攻击国家成员
+        if (Config.BossBar.showToDefenderCountry) {
+            country.members.forEach { member ->
+                val player = Bukkit.getPlayer(member.uniqueId)
+                if (player != null && player.isOnline) {
+                    players.add(player)
                 }
             }
         }
+
+        // 显示给攻击者国家成员
+        if (attackerCountry != null && Config.BossBar.showToAttackerCountry) {
+            attackerCountry.members.forEach { member ->
+                val player = Bukkit.getPlayer(member.uniqueId)
+                if (player != null && player.isOnline) {
+                    players.add(player)
+                }
+            }
+        }
+
+        return players.distinctBy { it.uniqueId }
+    }
+
+    /**
+     * 同步更新BossBar显示
+     */
+    private fun updateBossBarSync(country: Country, bossBar: BossBar, players: List<Player>) {
+        // 清除所有玩家
+        bossBar.removeAll()
+
+        // 添加应该显示的玩家
+        players.forEach { player ->
+            bossBar.addPlayer(player)
+        }
+
+        // 更新缓存
+        val displayInfo = BossBarDisplayInfo(
+            country = country,
+            attackerCountry = null, // 这里可以根据需要存储攻击者信息
+            lastUpdateTime = System.currentTimeMillis(),
+            displayPlayers = players.map { it.uniqueId }.toSet()
+        )
+        bossBarDisplayCache[country.id] = displayInfo
     }
     
     /**
@@ -238,6 +327,8 @@ object CoreManager {
         regenTask?.cancel()
         countryBossBars.values.forEach { it.removeAll() }
         countryBossBars.clear()
+        bossBarDisplayCache.clear()
         lastAttackTime.clear()
+        pluginLogger.info("核心管理器已清理资源")
     }
 }

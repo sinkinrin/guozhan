@@ -83,6 +83,8 @@ open class Configuration(val name: String) {
             override fun setValueToConfig(value: Boolean) = config.set(path, value)
         }
 
+    fun bool(path: String, default: Boolean) = boolean(path, default)
+
     fun long(path: String, default: Long) =
         object : ConfigDelegate<Long>(path, default) {
             override fun getValueFromConfig() = config.getLong(path, default)

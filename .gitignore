@@ -40,3 +40,46 @@ bin/
 
 ### Mac OS ###
 .DS_Store
+
+### GuoZhan Plugin Specific ###
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Log files
+logs/
+*.log
+*.log.*
+
+# Configuration files with sensitive data
+config/database.yml
+config/secrets.yml
+**/database.yml
+**/secrets.yml
+
+# Temporary files
+temp/
+tmp/
+*.tmp
+*.temp
+
+# Backup files
+*.bak
+*.backup
+
+# Plugin data folders (if not needed in git)
+plugins/GuoZhan/data/
+plugins/GuoZhan/logs/
+
+# IDE specific files
+.idea/workspace.xml
+.idea/tasks.xml
+.idea/usage.statistics.xml
+.idea/dictionaries/
+.idea/shelf/
+
+# OS generated files
+Thumbs.db
+ehthumbs.db
+Desktop.ini

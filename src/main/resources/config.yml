@@ -84,6 +84,32 @@ tax:
       gold-rate: 0.024
       diamond-rate: 0.024
 
+# BossBar 配置
+bossbar:
+  enabled: true
+  display-range: 100
+  update-interval: 20
+  title-format: "{country} 核心血量"
+  show-to-attacker-country: true
+  show-to-defender-country: true
+  cache-duration: 30
+
+# 随机出生系统配置
+random-spawn:
+  enabled: true
+  spawn-radius: 5000
+  max-attempts: 50
+  safety-check-radius: 3
+  min-distance-from-spawn: 1000
+  allowed-worlds:
+    - "world"
+  unsafe-blocks:
+    - "LAVA"
+    - "WATER"
+    - "FIRE"
+  min-y-level: 60
+  max-y-level: 120
+
 # 消息设置
 messages:
   prefix: "§6[国战] §r"
