@@ -5,12 +5,29 @@ All notable changes to the GuoZhan (国战) plugin will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0-DEV] - 2024-12-28
+
+### Added
+- **随机出生系统** 🎯
+  - 新玩家自动传送到无国家占领的安全区域
+  - 智能位置算法：安全检测、地形验证、危险方块避免
+  - 异步处理机制，不阻塞主线程
+  - 完整配置系统：出生半径、安全参数、世界限制
+  - 欢迎消息系统和用户引导
+  - 支持多世界和管理员命令
+
+### Technical Improvements
+- 新增 `RandomSpawnManager` 核心管理器
+- 新增 `RandomSpawnListener` 事件监听器
+- 扩展配置系统支持随机出生参数
+- 模块化设计，不影响现有功能
+
 ## [Unreleased]
 
 ### Planned
-- 随机出生系统 - 新玩家自动传送到无国家区域
 - 疆域小地图 - 15x15区块实时地图显示
 - 占领模式切换 - 手动/自动模式，木斧占领机制
+- BossBar核心血量显示增强 - 修复性能问题和显示逻辑
 - 国家科技系统 - 全体增益效果菜单
 - 更多管理命令 - move、rename、transfer、title等
 
