@@ -184,7 +184,7 @@ object RandomSpawnManager {
             
             return true
         } catch (e: Exception) {
-            pluginLogger.warn("检查领土状态时发生错误: ${e.message}")
+            pluginLogger.info("检查领土状态时发生错误: ${e.message}")
             return true // 发生错误时默认认为是自由领土
         }
     }

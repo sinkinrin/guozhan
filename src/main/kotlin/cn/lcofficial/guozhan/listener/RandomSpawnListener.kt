@@ -38,7 +38,7 @@ class RandomSpawnListener : Listener {
         
         // 检查是否是第一次加入的玩家
         if (!RandomSpawnManager.isFirstTimePlayer(player)) {
-            pluginLogger.debug("玩家 ${player.name} 不是第一次加入，跳过随机出生")
+            pluginLogger.info("玩家 ${player.name} 不是第一次加入，跳过随机出生")
             return
         }
         
@@ -67,7 +67,7 @@ class RandomSpawnListener : Listener {
      * 发送欢迎消息给新玩家
      * @param player 新玩家
      */
-    private fun sendWelcomeMessage(player: Player) {
+    private fun sendWelcomeMessage(player: org.bukkit.entity.Player) {
         val messages = listOf(
             "§6===========================================",
             "§a§l欢迎来到国战服务器！",
@@ -102,7 +102,7 @@ class RandomSpawnListener : Listener {
      * 发送备用消息（当随机出生失败时）
      * @param player 玩家
      */
-    private fun sendFallbackMessage(player: Player) {
+    private fun sendFallbackMessage(player: org.bukkit.entity.Player) {
         val messages = listOf(
             "§6===========================================",
             "§a§l欢迎来到国战服务器！",
