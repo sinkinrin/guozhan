@@ -1,0 +1,95 @@
+# 国战插件配置文件
+
+# 数据库配置
+database:
+  type: "mysql" # mysql 或 sqlite
+  host: "localhost"
+  port: 3306
+  database: "guozhan"
+  username: "root"
+  password: "password"
+  pool-size: 10
+
+# 世界设置
+world:
+  name: "world"
+  spawn-radius: 7500
+  min-y: 64
+  max-y: 100
+
+# 国家设置
+country:
+  max-name-length: 12
+  min-name-length: 3
+  creation-cost: 9 # 铁锭数量
+  core-health-max: 1000
+  core-regen-interval: 60 # 秒
+  core-regen-amount: 1
+
+# 领土设置
+territory:
+  max-loyalty: 100
+  loyalty-decay-interval: 300 # 秒
+  loyalty-restore-cost: 0.5 # 每1%忠诚度消耗的领土收入小时数
+
+# 王战设置
+war:
+  day: 6 # 周六 (1-7)
+  prepare-hour: 19
+  prepare-minute: 0
+  start-hour: 19
+  start-minute: 20
+  end-hour: 22
+  end-minute: 0
+  core-territory-range: [-64, 63] # 核心疆域范围
+  war-territory-range: [-128, 127] # 王战活动范围
+
+# 护盾设置
+shield:
+  cost-per-hour: 5 # 每小时消耗的领土收入小时数
+  cooldown-minutes: 30 # 关闭后的冷却时间
+  max-aspect-ratio: 2.0 # 最大长宽比
+
+# 职业设置
+profession:
+  unlock-delay-hours: 2 # 建国后多久可以设置职业
+  upgrade-delay-hours: 24 # 设置职业后多久可以升级
+  upgrade-cost: 50 # 升级到2级需要的钻石数
+
+# 税收设置
+tax:
+  regions:
+    "失落蛮荒":
+      range: 20000
+      gold-rate: 0.004
+      diamond-rate: 0.002
+    "远征前线":
+      range: 14000
+      gold-rate: 0.008
+      diamond-rate: 0.004
+    "纷争之地":
+      range: 9000
+      gold-rate: 0.012
+      diamond-rate: 0.008
+    "开拓边疆":
+      range: 5000
+      gold-rate: 0.016
+      diamond-rate: 0.012
+    "内陆邦畿":
+      range: 2500
+      gold-rate: 0.02
+      diamond-rate: 0.016
+    "核心疆域":
+      range: 1300
+      gold-rate: 0.024
+      diamond-rate: 0.024
+
+# 消息设置
+messages:
+  prefix: "§6[国战] §r"
+  no-permission: "§c你没有权限执行此操作"
+  country-not-found: "§c国家不存在"
+  player-not-found: "§c玩家不存在"
+  not-in-country: "§c你不在任何国家中"
+  not-owner: "§c只有君主才能执行此操作"
+  not-admin: "§c只有君主或大臣才能执行此操作"

@@ -1,0 +1,55 @@
+# 外交系统配置文件
+
+# 外交关系配置
+relations:
+  # 关系变化冷却时间（秒）
+  cooldown: 3600
+  # 默认关系类型（NEUTRAL, ALLIANCE, HOSTILE, WAR）
+  default: NEUTRAL
+
+# 战争系统配置
+war:
+  # 战争持续时间（小时）
+  duration: 24
+  # 战争伤害倍率
+  damage_multiplier: 1.5
+  # 战争击杀奖励（经济点数）
+  kill_reward: 50
+  # 战争胜利奖励（经济点数）
+  victory_reward: 500
+  # 战争失败惩罚（经济点数）
+  defeat_penalty: 200
+  
+  # 战争效果配置
+  effects:
+    # 胜利效果持续时间（分钟）
+    victory_duration: 30
+    # 失败效果持续时间（分钟）
+    defeat_duration: 15
+    # 领土战斗效果持续时间（秒）
+    territory_combat_duration: 10
+    
+    # 家园领土效果
+    home_territory:
+      resistance_level: 0
+      regeneration_level: 0
+      
+    # 敌对领土效果
+    enemy_territory:
+      weakness_level: 0
+      slowness_level: 0
+      
+    # 胜利效果
+    victory:
+      strength_level: 0
+      resistance_level: 0
+      regeneration_level: 1
+      
+    # 失败效果
+    defeat:
+      weakness_level: 0
+      
+    # 战斗效果
+    combat:
+      home_strength_level: 0
+      home_resistance_level: 0

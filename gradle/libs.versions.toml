@@ -1,0 +1,16 @@
+[versions]
+exposed = "0.61.0"
+fastjson = "2.0.58"
+kotlin = "2.2.0"
+
+[libraries]
+exposed-core = { group = "org.jetbrains.exposed", name = "exposed-core", version.ref = "exposed" }
+exposed-dao = { group = "org.jetbrains.exposed", name = "exposed-dao", version.ref = "exposed" }
+exposed-jdbc = { group = "org.jetbrains.exposed", name = "exposed-jdbc", version.ref = "exposed" }
+exposed-migrations = { group = "org.jetbrains.exposed", name = "exposed-migration", version.ref = "exposed" }
+fastjson = { group = "com.alibaba.fastjson2", name = "fastjson2", version.ref = "fastjson" }
+mysql = {group = "com.mysql", name="mysql-connector-j", version = "9.4.0"}
+hikari = {group="com.zaxxer", name="HikariCP", version = "5.0.1"}
+
+[plugins]
+kotlin = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
