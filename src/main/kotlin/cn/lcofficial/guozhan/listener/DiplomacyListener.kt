@@ -124,8 +124,8 @@ class DiplomacyListener : Listener {
         val members = UserManager.users.values.filter { it.country?.id == country.id }
         
         members.forEach { member ->
-            val player = Bukkit.getPlayer(member.uuid)
-            if (player != null && player.isOnline) {
+            val player = Bukkit.getPlayer(member.uniqueId)
+            if (player != null) {
                 player.sendMessage(message)
             }
         }

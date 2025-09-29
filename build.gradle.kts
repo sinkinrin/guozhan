@@ -2,6 +2,7 @@ plugins {
     id("java")
     alias(libs.plugins.kotlin)
     id("com.gradleup.shadow") version "8.3.6"
+    id("xyz.jpenilla.run-paper") version "2.3.1"
 }
 
 group = "cn.lcofficial"
@@ -14,6 +15,7 @@ repositories {
     maven("https://repo.papermc.io/repository/maven-public")
     maven("https://repo.extendedclip.com/content/repositories/placeholderapi/")
     maven("https://repo.jpenilla.xyz/snapshots/")
+    maven("https://jitpack.io") // JitPack for MockBukkit
     mavenCentral()
 }
 
@@ -30,6 +32,19 @@ dependencies {
     compileOnly(libs.fastjson)
     compileOnly(libs.mysql)
     compileOnly(libs.hikari)
+
+    // 测试依赖
+    testImplementation("org.junit.jupiter:junit-jupiter:5.10.1")
+    // MockBukkit暂时无法使用，专注于纯逻辑测试
+    // testImplementation("com.github.MockBukkit:MockBukkit:v1.21-SNAPSHOT")
+    testImplementation("io.papermc.paper:paper-api:1.21.5-R0.1-SNAPSHOT")
+    testImplementation(kotlin("test"))
+    testImplementation(libs.exposed.core)
+    testImplementation(libs.exposed.dao)
+    testImplementation(libs.exposed.jdbc)
+    testImplementation(libs.fastjson)
+    testImplementation(libs.mysql)
+    testImplementation(libs.hikari)
 }
 
 tasks.shadowJar {
@@ -52,4 +67,17 @@ tasks.processResources {
         expand(project.properties)
         expand(inputs.properties)
     }
+}
+
+// 测试配置
+tasks.test {
+    useJUnitPlatform()
+    testLogging {
+        events("passed", "skipped", "failed")
+    }
+}
+
+// Folia测试环境配置
+runPaper {
+    folia.registerTask()
 }

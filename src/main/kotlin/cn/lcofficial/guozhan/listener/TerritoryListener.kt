@@ -6,7 +6,7 @@ import cn.lcofficial.guozhan.data.Rank
 import cn.lcofficial.guozhan.manager.TerritoryManager
 import cn.lcofficial.guozhan.manager.TerritoryManager.territoryBlock
 import cn.lcofficial.guozhan.manager.UserManager.user
-import cn.lcofficial.guozhan.util.Scheduler
+// 移除不存在的Scheduler导入，使用Folia调度器
 import org.bukkit.Material
 import org.bukkit.entity.Player
 import org.bukkit.event.EventHandler
@@ -19,7 +19,7 @@ import org.bukkit.event.player.PlayerMoveEvent
 
 object TerritoryListener : Listener {
 
-    fun register() = Guozhan.plugin.server.pluginManager.registerEvents(this, Guozhan.plugin)
+    fun register() = Guozhan.instance.server.pluginManager.registerEvents(this, Guozhan.instance)
 
     private val lastNotifyTime = mutableMapOf<Player, Long>()
     private val notifyCooldown = 3000L // 3秒冷却时间
@@ -94,7 +94,10 @@ object TerritoryListener : Listener {
             if (territory.canHarvest() && territory.resourceType != null) {
                 val user = player.user()
                 if (user.country?.id == territory.owner?.id) {
-                    Scheduler.run {
+                    // 使用Folia的RegionScheduler在正确的区域执行
+                    val server = org.bukkit.Bukkit.getServer()
+                    val regionScheduler = server.regionScheduler
+                    regionScheduler.execute(Guozhan.instance, player.location) {
                         player.sendMessage("§a这块领土有可收获的${territory.resourceType}资源！使用 /u harvest 来收获。")
                     }
                 }
@@ -141,7 +144,10 @@ object TerritoryListener : Listener {
         val lastTime = lastNotifyTime[player] ?: 0L
 
         if (currentTime - lastTime > notifyCooldown) {
-            Scheduler.run {
+            // 使用Folia的RegionScheduler在正确的区域执行
+            val server = org.bukkit.Bukkit.getServer()
+            val regionScheduler = server.regionScheduler
+            regionScheduler.execute(Guozhan.instance, player.location) {
                 player.sendMessage(message)
             }
             lastNotifyTime[player] = currentTime

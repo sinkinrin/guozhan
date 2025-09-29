@@ -8,89 +8,41 @@ import org.bukkit.World
 import org.bukkit.block.Biome
 import kotlin.random.Random
 
+/**
+ * SpawnManager - 出生点管理器
+ *
+ * 注意：随机出生功能已迁移到RandomSpawnManager
+ * 此类保留用于其他出生点相关的功能
+ */
 object SpawnManager {
-    private const val SPAWN_RADIUS = 7500
-    private const val MIN_Y = 64
-    private const val MAX_Y = 100
-    
-    fun findRandomSpawnLocation(world: World): Location? {
-        var attempts = 0
-        val maxAttempts = 100
-        
-        while (attempts < maxAttempts) {
-            val x = Random.nextInt(-SPAWN_RADIUS, SPAWN_RADIUS)
-            val z = Random.nextInt(-SPAWN_RADIUS, SPAWN_RADIUS)
-            
-            // 检查是否在已有领土范围内
-            if (isInTerritory(world, x, z)) {
-                attempts++
-                continue
-            }
-            
-            // 找到合适的Y坐标
-            val y = findSafeY(world, x, z)
-            if (y == -1) {
-                attempts++
-                continue
-            }
-            
-            val location = Location(world, x.toDouble(), y.toDouble(), z.toDouble())
-            
-            // 检查生物群系
-            val biome = world.getBiome(x, y, z)
-            if (isValidBiome(biome)) {
-                return location
-            }
-            
-            attempts++
-        }
-        
-        return null
+
+    /**
+     * 检查玩家是否需要传送到出生点
+     * @param player 玩家
+     * @return 是否需要传送
+     */
+    fun shouldTeleportToSpawn(player: org.bukkit.entity.Player): Boolean {
+        // 检查玩家是否是第一次加入且没有国家
+        val user = cn.lcofficial.guozhan.manager.UserManager.getUser(player.uniqueId)
+        return user == null || user.country == null
     }
-    
-    private fun findSafeY(world: World, x: Int, z: Int): Int {
-        val chunk = world.getChunkAt(x shr 4, z shr 4)
-        val blockX = x and 15
-        val blockZ = z and 15
-        
-        for (y in MAX_Y downTo MIN_Y) {
-            val block = chunk.getBlock(blockX, y, blockZ)
-            val below = chunk.getBlock(blockX, y - 1, blockZ)
-            
-            if (block.type == Material.AIR && 
-                below.type.isSolid && 
-                below.type != Material.LAVA && 
-                below.type != Material.WATER) {
-                return y
-            }
-        }
-        
-        return -1
+
+    /**
+     * 传送玩家到安全出生点
+     * 委托给RandomSpawnManager处理
+     * @param player 玩家
+     */
+    fun teleportToSafeSpawn(player: org.bukkit.entity.Player) {
+        // 委托给RandomSpawnManager处理随机出生
+        cn.lcofficial.guozhan.manager.RandomSpawnManager.teleportPlayerToRandomSpawn(player)
     }
-    
-    private fun isInTerritory(world: World, x: Int, z: Int): Boolean {
-        // 检查该坐标是否属于任何国家的领土
-        return false // 实际实现需要查询TerritoryManager
-    }
-    
-    private fun isValidBiome(biome: Biome): Boolean {
-        // 排除海洋类生物群系
-        return when (biome) {
-            Biome.OCEAN, Biome.DEEP_OCEAN, Biome.COLD_OCEAN, 
-            Biome.DEEP_COLD_OCEAN, Biome.LUKEWARM_OCEAN, Biome.DEEP_LUKEWARM_OCEAN,
-            Biome.WARM_OCEAN, Biome.DEEP_WARM_OCEAN, Biome.FROZEN_OCEAN,
-            Biome.DEEP_FROZEN_OCEAN, Biome.RIVER -> false
-            else -> true
-        }
-    }
-    
-    fun teleportToRandomSpawn(player: org.bukkit.entity.Player) {
-        val location = findRandomSpawnLocation(player.world)
-        if (location != null) {
-            player.teleport(location)
-            player.sendMessage("§a已为你随机传送到安全区域！")
-        } else {
-            player.sendMessage("§c无法找到合适的出生点，请稍后再试")
-        }
+
+    /**
+     * 获取世界的默认出生点
+     * @param world 世界
+     * @return 出生点位置
+     */
+    fun getWorldSpawn(world: org.bukkit.World): org.bukkit.Location {
+        return world.spawnLocation
     }
 }

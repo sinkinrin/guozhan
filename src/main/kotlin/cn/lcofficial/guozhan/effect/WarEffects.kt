@@ -1,6 +1,7 @@
 package cn.lcofficial.guozhan.effect
 
 import cn.lcofficial.guozhan.Guozhan
+import cn.lcofficial.guozhan.config.DiplomacyConfig
 import cn.lcofficial.guozhan.data.Country
 import cn.lcofficial.guozhan.manager.UserManager.user
 import cn.lcofficial.guozhan.manager.WarManager
@@ -32,9 +33,9 @@ object WarEffects {
      * 启动战争效果任务
      */
     private fun startWarEffectsTask() {
-        Bukkit.getScheduler().runTaskTimer(Guozhan.instance, Runnable {
+        Bukkit.getGlobalRegionScheduler().runAtFixedRate(Guozhan.instance, { _ ->
             applyWarEffectsToAllPlayers()
-        }, WAR_BUFF_CHECK_INTERVAL, WAR_BUFF_CHECK_INTERVAL)
+        }, WAR_BUFF_CHECK_INTERVAL.toLong(), WAR_BUFF_CHECK_INTERVAL.toLong())
     }
     
     /**
@@ -60,8 +61,9 @@ object WarEffects {
         // 在自己的领土上获得增益效果
         val location = player.location
         val chunk = location.chunk
-        val territoryOwner = cn.lcofficial.guozhan.manager.TerritoryManager.getOwner(chunk)
-        
+        val territory = cn.lcofficial.guozhan.manager.TerritoryManager.getTerritoryBlock(chunk.x, chunk.z, chunk.world.name)
+        val territoryOwner = territory?.owner
+
         if (territoryOwner?.id == country.id) {
             // 在自己的领土上获得增益效果
             applyHomeTerrainBuffs(player)
@@ -80,11 +82,11 @@ object WarEffects {
      */
     private fun applyHomeTerrainBuffs(player: Player) {
         // 在自己的领土上获得力量和抗性效果
-        player.addPotionEffect(PotionEffect(PotionEffectType.INCREASE_DAMAGE, WAR_BUFF_DURATION * 20, 0, false, true, true))
-        player.addPotionEffect(PotionEffect(PotionEffectType.DAMAGE_RESISTANCE, WAR_BUFF_DURATION * 20, 0, false, true, true))
-        
+        player.addPotionEffect(PotionEffect(PotionEffectType.STRENGTH, WAR_BUFF_DURATION * 20, 0, false, true, true))
+        player.addPotionEffect(PotionEffect(PotionEffectType.RESISTANCE, WAR_BUFF_DURATION * 20, 0, false, true, true))
+
         // 通知玩家（仅在首次获得效果时）
-        if (!player.hasPotionEffect(PotionEffectType.INCREASE_DAMAGE)) {
+        if (!player.hasPotionEffect(PotionEffectType.STRENGTH)) {
             player.sendMessage("§a你在自己的领土上获得了战争增益效果！")
         }
     }
@@ -114,11 +116,11 @@ object WarEffects {
         val duration = 20 * 60 * DiplomacyConfig.getVictoryEffectDuration() // 配置的分钟数
         
         if (strengthLevel > 0) {
-            player.addPotionEffect(PotionEffect(PotionEffectType.INCREASE_DAMAGE, duration, strengthLevel - 1, false, true))
+            player.addPotionEffect(PotionEffect(PotionEffectType.STRENGTH, duration, strengthLevel - 1, false, true))
         }
-        
+
         if (resistanceLevel > 0) {
-            player.addPotionEffect(PotionEffect(PotionEffectType.DAMAGE_RESISTANCE, duration, resistanceLevel - 1, false, true))
+            player.addPotionEffect(PotionEffect(PotionEffectType.RESISTANCE, duration, resistanceLevel - 1, false, true))
         }
         
         if (regenerationLevel > 0) {
@@ -153,7 +155,7 @@ object WarEffects {
         }
         
         // 添加轻微的缓慢效果
-        player.addPotionEffect(PotionEffect(PotionEffectType.SLOW, duration / 2, 0, false, true)) // 持续时间为失败效果的一半
+        player.addPotionEffect(PotionEffect(PotionEffectType.SLOWNESS, duration / 2, 0, false, true)) // 持续时间为失败效果的一半
         
         // 播放失败音效
         player.playSound(player.location, Sound.ENTITY_WITHER_DEATH, 0.5f, 0.8f)

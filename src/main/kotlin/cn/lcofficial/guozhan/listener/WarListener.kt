@@ -86,7 +86,8 @@ class WarListener : Listener {
             // 检查两个国家是否处于战争状态
             if (WarManager.isAtWar(damagedCountry, damagerCountry)) {
                 // 检查是否在领土上，应用额外战争效果
-                WarEffects.applyWarCombatEffects(damager, damaged)
+                WarEffects.applyWarEffects(damager, damagerCountry)
+                WarEffects.applyWarEffects(damaged, damagedCountry)
             }
         }
     }
@@ -111,14 +112,15 @@ class WarListener : Listener {
         val country = user.country ?: return
         
         // 延迟3秒发送战争信息，确保玩家已完全加载
-        Bukkit.getScheduler().runTaskLater(Guozhan.instance, Runnable {
+        // 使用Folia的EntityScheduler进行玩家相关操作
+        player.scheduler.runDelayed(Guozhan.instance, {
             if (player.isOnline) {
                 sendWarStatus(player, country)
-                
+
                 // 应用战争效果
-                WarEffects.applyWarEffects(player)
+                WarEffects.applyWarEffects(player, country)
             }
-        }, 60L) // 60 ticks = 3 seconds
+        }, null, 60L) // 60 ticks = 3 seconds
     }
     
     /**

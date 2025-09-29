@@ -9,6 +9,9 @@ import cn.lcofficial.guozhan.integration.SquaremapIntegration
 import cn.lcofficial.guozhan.listener.DiplomacyListener
 import cn.lcofficial.guozhan.listener.EconomyListener
 import cn.lcofficial.guozhan.listener.PlayerListener
+import cn.lcofficial.guozhan.listener.RandomSpawnListener
+import cn.lcofficial.guozhan.listener.TaxRegionListener
+import cn.lcofficial.guozhan.listener.TerritoryListener
 import cn.lcofficial.guozhan.listener.WarListener
 import cn.lcofficial.guozhan.manager.DataManager
 import cn.lcofficial.guozhan.manager.DiplomacyManager
@@ -64,12 +67,15 @@ class Guozhan : JavaPlugin() {
         getCommand("w")!!.tabCompleter = whisperCommand
         
         // 注册监听器
-        PlayerListener().register()
-        cn.lcofficial.guozhan.listener.TerritoryListener().register()
+        server.pluginManager.registerEvents(PlayerListener, this) // 修复：object类型直接传递
+        TerritoryListener.register() // 修复：object类型直接调用
         EconomyListener().register()
         DiplomacyListener().register()
         WarListener().register()
-        cn.lcofficial.guozhan.listener.TaxRegionListener().register()
+        TaxRegionListener().register() // 修复：class类型需要实例化
+
+        // 注册随机出生监听器
+        RandomSpawnListener().register() // 修复：移除包名前缀
         cn.lcofficial.guozhan.listener.CoreListener().register()
         cn.lcofficial.guozhan.listener.RandomSpawnListener().register()
         

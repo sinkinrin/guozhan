@@ -141,12 +141,12 @@ object DiplomacyManager {
         // 获取两个国家的所有在线成员
         val country1Members = Bukkit.getOnlinePlayers().filter { player ->
             val user = player.user()
-            user.country?.id == country1.id
+            user?.country?.id == country1.id
         }
-        
+
         val country2Members = Bukkit.getOnlinePlayers().filter { player ->
             val user = player.user()
-            user.country?.id == country2.id
+            user?.country?.id == country2.id
         }
         
         // 构建消息
@@ -173,4 +173,4 @@ object DiplomacyManager {
 /**
  * 获取玩家的用户数据
  */
-private fun org.bukkit.entity.Player.user() = UserManager.getUser(this)
+private fun org.bukkit.entity.Player.user() = UserManager.getUser(this.uniqueId)

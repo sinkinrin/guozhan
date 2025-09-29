@@ -24,29 +24,34 @@ class SquaremapIntegration {
     }
     
     fun updateTerritoryMap() {
+        // TODO: 修复Squaremap API兼容性问题
+        // 当前版本的Squaremap API可能不兼容，需要更新依赖或调整API调用
+        Bukkit.getLogger().info("Squaremap地图更新功能暂时禁用，等待API兼容性修复")
+
+        /*
         squaremap?.let { map ->
             val world = Bukkit.getWorld("world") ?: return
             val worldId = WorldIdentifier.of(world.uid)
-            
+
             val api = map.getWorldIfEnabled(worldId) ?: return
-            
+
             // 清除现有标记
             api.layerRegistry().get("guozhan_territories")?.let { layer ->
                 layer.clearMarkers()
             }
-            
+
             // 添加国家领土标记
-            val countries = CountryManager.getAllCountries()
+            val countries = CountryManager.countries.values
             countries.forEach { country ->
-                val territories = TerritoryManager.getTerritoriesByCountry(country.id)
-                
+                val territories = TerritoryManager.getTerritoriesByCountry(country)
+
                 territories.forEach { territory ->
                     val x = territory.x * 16
                     val z = territory.z * 16
-                    
+
                     // 随机颜色
                     val color = Color.getHSBColor(Random(country.id.hashCode().toLong()).nextFloat(), 0.7f, 0.9f)
-                    
+
                     // 添加区块边框
                     api.layerRegistry().get("guozhan_territories")?.let { layer ->
                         layer.addRectangle(
@@ -58,7 +63,7 @@ class SquaremapIntegration {
                             color
                         )
                     }
-                    
+
                     // 如果是王城，添加特殊标记
                     if (territory.isCapital) {
                         api.layerRegistry().get("guozhan_capitals")?.let { layer ->
@@ -74,6 +79,7 @@ class SquaremapIntegration {
                 }
             }
         }
+        */
     }
     
     fun updateCountryColor(countryId: UUID) {

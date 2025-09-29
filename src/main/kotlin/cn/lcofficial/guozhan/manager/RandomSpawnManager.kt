@@ -35,21 +35,27 @@ object RandomSpawnManager {
         
         return findRandomSpawnLocationAsync(world).thenApply { location ->
             if (location != null) {
-                // 在主线程中执行传送
-                Bukkit.getScheduler().runTask(Guozhan.instance, Runnable {
+                // 使用Folia的RegionScheduler在正确的区域执行传送
+                val server = Bukkit.getServer()
+                val regionScheduler = server.regionScheduler
+
+                regionScheduler.execute(Guozhan.instance, location) {
                     player.teleport(location)
                     player.sendMessage("§a欢迎来到国战服务器！你已被传送到安全的出生点。")
                     pluginLogger.info("玩家 ${player.name} 已传送到随机出生点: ${location.x}, ${location.y}, ${location.z}")
-                })
+                }
                 true
             } else {
                 // 传送失败，使用默认出生点
-                Bukkit.getScheduler().runTask(Guozhan.instance, Runnable {
-                    val spawnLocation = world.spawnLocation
+                val server = Bukkit.getServer()
+                val regionScheduler = server.regionScheduler
+                val spawnLocation = world.spawnLocation
+
+                regionScheduler.execute(Guozhan.instance, spawnLocation) {
                     player.teleport(spawnLocation)
                     player.sendMessage("§e无法找到合适的随机出生点，已传送到默认位置。")
-                    pluginLogger.warn("为玩家 ${player.name} 查找随机出生点失败，使用默认出生点")
-                })
+                    pluginLogger.warning("为玩家 ${player.name} 查找随机出生点失败，使用默认出生点")
+                }
                 false
             }
         }
@@ -165,27 +171,31 @@ object RandomSpawnManager {
      */
     private fun isTerritoryFree(location: Location): Boolean {
         try {
-            // 尝试检查领土管理器
-            // 注意：由于现有代码有编译错误，这里使用安全的方式检查
-            // 如果 TerritoryManager 不可用，默认认为是自由领土
-            
-            // TODO: 当 TerritoryManager 修复后，取消注释以下代码
-            // val territory = TerritoryManager.getTerritory(location)
-            // return territory == null || territory.country == null
-            
-            // 临时实现：检查区块是否在世界出生点保护范围内
+            // 使用正确的TerritoryManager API检查领土状态
+            val chunkX = location.blockX shr 4
+            val chunkZ = location.blockZ shr 4
+            val worldName = location.world.name
+
+            val territory = cn.lcofficial.guozhan.manager.TerritoryManager.getTerritoryBlock(
+                chunkX, chunkZ, worldName
+            )
+
+            // 如果没有领土记录或者领土没有所有者，则认为是自由的
+            val isFree = territory == null || territory.owner == null
+
+            if (!isFree) {
+                pluginLogger.info("位置 ($chunkX, $chunkZ) 已被国家 ${territory?.owner?.name} 占领")
+            }
+
+            return isFree
+        } catch (e: Exception) {
+            pluginLogger.warning("检查领土状态时发生错误: ${e.message}")
+            // 发生错误时，检查是否距离出生点太近
             val spawnLocation = location.world.spawnLocation
             val distance = location.distance(spawnLocation)
-            
+
             // 如果距离出生点太近，可能被保护，认为不安全
-            if (distance < 500) {
-                return false
-            }
-            
-            return true
-        } catch (e: Exception) {
-            pluginLogger.info("检查领土状态时发生错误: ${e.message}")
-            return true // 发生错误时默认认为是自由领土
+            return distance >= 500
         }
     }
     

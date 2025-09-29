@@ -66,19 +66,19 @@ object EconomyTasks {
         
         for (country in countries) {
             // 跳过税率为0的国家
-            if (country.taxRate <= 0) continue
+            if (EconomyManager.getTaxRate(country) <= 0) continue
             
             // 获取国家的所有在线成员
             val onlineMembers = Bukkit.getOnlinePlayers().filter { player ->
                 val user = player.user()
-                user.country?.id == country.id
+                user?.country?.id == country.id
             }
             
             // 如果没有在线成员，跳过
             if (onlineMembers.isEmpty()) continue
             
             // 收税
-            val taxCollected = EconomyManager.collectTax(country, true)
+            val taxCollected = EconomyManager.collectTax(country)
             totalCollected += taxCollected
             
             // 通知在线成员
@@ -128,7 +128,7 @@ object EconomyTasks {
                 // 通知在线成员
                 val onlineMembers = Bukkit.getOnlinePlayers().filter { player ->
                     val user = player.user()
-                    user.country?.id == country.id
+                    user?.country?.id == country.id
                 }
                 
                 for (player in onlineMembers) {
@@ -150,4 +150,4 @@ object EconomyTasks {
 /**
  * 获取玩家的用户数据
  */
-private fun org.bukkit.entity.Player.user() = cn.lcofficial.guozhan.manager.UserManager.getUser(this)
+private fun org.bukkit.entity.Player.user() = cn.lcofficial.guozhan.manager.UserManager.getUser(this.uniqueId)

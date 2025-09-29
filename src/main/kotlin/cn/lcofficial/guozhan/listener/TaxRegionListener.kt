@@ -3,7 +3,8 @@ package cn.lcofficial.guozhan.listener
 import cn.lcofficial.guozhan.Guozhan
 import cn.lcofficial.guozhan.economy.RegionalTaxSystem
 import cn.lcofficial.guozhan.manager.TerritoryManager
-import cn.lcofficial.guozhan.util.Message
+import cn.lcofficial.guozhan.config.Message
+import cn.lcofficial.guozhan.pluginLogger
 import org.bukkit.entity.Player
 import org.bukkit.event.EventHandler
 import org.bukkit.event.Listener
@@ -29,7 +30,7 @@ class TaxRegionListener : Listener {
         
         // 获取玩家当前所在区块
         val chunk = player.location.chunk
-        val territory = TerritoryManager.getTerritoryBlock(chunk)
+        val territory = TerritoryManager.getTerritoryBlock(chunk.x, chunk.z, chunk.world.name)
         
         // 获取当前区域
         val currentRegion = if (territory != null) {
@@ -45,12 +46,14 @@ class TaxRegionListener : Listener {
             // 更新玩家当前区域记录
             playerRegions[player] = currentRegion
             
-            // 通知玩家进入新区域
-            Message.sendInfo(player, "§7你已进入 §f${currentRegion.displayName} §7区域")
-            
-            // 显示该区域的税率信息
-            Message.sendInfo(player, "§7该区域金锭税率: §6${currentRegion.goldRate} §7/ 小时")
-            Message.sendInfo(player, "§7该区域钻石税率: §b${currentRegion.diamondRate} §7/ 小时")
+            // 通知玩家进入新区域 - 使用扩展函数的正确方式
+            with(Message) {
+                player.sendInfo("§7你已进入 §f${currentRegion.displayName} §7区域")
+
+                // 显示该区域的税率信息
+                player.sendInfo("§7该区域金锭税率: §6${currentRegion.goldRate} §7/ 小时")
+                player.sendInfo("§7该区域钻石税率: §b${currentRegion.diamondRate} §7/ 小时")
+            }
         }
     }
     
@@ -59,6 +62,6 @@ class TaxRegionListener : Listener {
      */
     fun register() {
         Guozhan.instance.server.pluginManager.registerEvents(this, Guozhan.instance)
-        Guozhan.pluginLogger.info("税收区域监听器已注册")
+        pluginLogger.info("税收区域监听器已注册")
     }
 }

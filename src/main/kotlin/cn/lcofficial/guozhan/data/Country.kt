@@ -21,6 +21,7 @@ object Countries : IdTable<String>("gz_countries") {
     val shield = bool("shield")
     val gold = integer("gold")
     val diamond = integer("diamond")
+    val economyPoints = integer("economy_points").default(0) // 经济点数
     // 核心系统相关字段
     val coreHealth = integer("core_health").default(1000)
     val coreLocationX = integer("core_location_x")
@@ -39,6 +40,7 @@ class Country(
     var shield: Boolean,
     var gold: Int,
     var diamond: Int,
+    var economyPoints: Int = 0, // 经济点数
     var capitalId: UUID,
     // 核心系统相关属性
     var coreHealth: Int = 1000,
@@ -80,6 +82,7 @@ class Country(
             it[shield] = shield
             it[gold] = gold
             it[diamond] = diamond
+            it[economyPoints] = economyPoints
             it[coreHealth] = coreHealth
             it[coreLocationX] = coreLocationX
             it[coreLocationY] = coreLocationY

@@ -45,10 +45,14 @@ class RandomSpawnListener : Listener {
         // 为新玩家寻找随机出生点
         pluginLogger.info("检测到新玩家 ${player.name}，开始寻找随机出生点")
         
-        // 延迟执行，确保玩家完全加载
-        org.bukkit.Bukkit.getScheduler().runTaskLater(
+        // 使用Folia的RegionScheduler延迟执行，确保玩家完全加载
+        val server = org.bukkit.Bukkit.getServer()
+        val regionScheduler = server.regionScheduler
+
+        regionScheduler.runDelayed(
             cn.lcofficial.guozhan.Guozhan.instance,
-            Runnable {
+            player.location,
+            { _ ->
                 RandomSpawnManager.teleportPlayerToRandomSpawn(player).thenAccept { success ->
                     if (success) {
                         // 发送欢迎消息
@@ -86,10 +90,14 @@ class RandomSpawnListener : Listener {
             "§6==========================================="
         )
         
-        // 延迟发送消息，确保玩家能看到
-        org.bukkit.Bukkit.getScheduler().runTaskLater(
+        // 使用Folia的RegionScheduler延迟发送消息，确保玩家能看到
+        val server = org.bukkit.Bukkit.getServer()
+        val regionScheduler = server.regionScheduler
+
+        regionScheduler.runDelayed(
             cn.lcofficial.guozhan.Guozhan.instance,
-            Runnable {
+            player.location,
+            { _ ->
                 messages.forEach { message ->
                     player.sendMessage(message)
                 }
@@ -117,10 +125,14 @@ class RandomSpawnListener : Listener {
             "§6==========================================="
         )
         
-        // 延迟发送消息
-        org.bukkit.Bukkit.getScheduler().runTaskLater(
+        // 使用Folia的RegionScheduler延迟发送消息
+        val server = org.bukkit.Bukkit.getServer()
+        val regionScheduler = server.regionScheduler
+
+        regionScheduler.runDelayed(
             cn.lcofficial.guozhan.Guozhan.instance,
-            Runnable {
+            player.location,
+            { _ ->
                 messages.forEach { message ->
                     player.sendMessage(message)
                 }

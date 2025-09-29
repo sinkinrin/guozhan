@@ -1,0 +1,128 @@
+# GuoZhan插件测试配置文件
+# 此配置用于Docker测试环境
+
+# 数据库配置
+database:
+  # Docker容器内的数据库连接
+  host: "database"  # Docker服务名
+  port: 3306
+  database: "guozhan"
+  username: "guozhan"
+  password: "guozhan123"
+  
+  # 连接池配置
+  pool:
+    maximum-pool-size: 10
+    minimum-idle: 2
+    connection-timeout: 30000
+    idle-timeout: 600000
+    max-lifetime: 1800000
+
+# 世界配置
+world:
+  default-world: "world"
+  allowed-worlds:
+    - "world"
+    - "world_nether"
+    - "world_the_end"
+
+# 随机出生系统
+random-spawn:
+  enabled: true
+  spawn-radius: 5000
+  max-attempts: 50
+  min-distance-from-spawn: 1000
+  safety-check-radius: 3
+  min-y-level: 60
+  max-y-level: 120
+  allowed-worlds:
+    - "world"
+  unsafe-blocks:
+    - "LAVA"
+    - "WATER"
+    - "FIRE"
+    - "MAGMA_BLOCK"
+    - "CACTUS"
+
+# 国家系统配置
+country:
+  # 国家名称限制
+  name:
+    min-length: 2
+    max-length: 16
+    allowed-characters: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_"
+  
+  # 国家创建限制
+  creation:
+    cost: 1000  # 创建国家所需金币
+    cooldown: 86400  # 24小时冷却时间（秒）
+  
+  # 国家成员限制
+  members:
+    max-members: 50
+    invite-timeout: 300  # 5分钟邀请超时
+
+# 领土系统配置
+territory:
+  # 领土声明
+  claim:
+    cost-per-chunk: 100
+    max-chunks-per-country: 100
+    min-distance-between-countries: 5  # 区块距离
+  
+  # 领土保护
+  protection:
+    block-break: true
+    block-place: true
+    entity-damage: true
+    container-access: false
+
+# 外交系统配置
+diplomacy:
+  # 关系类型配置
+  relations:
+    default: "NEUTRAL"
+    change-cooldown: 3600  # 1小时关系变更冷却
+  
+  # 战争配置
+  war:
+    damage-multiplier: 1.5
+    kill-reward: 50  # 击杀奖励经济点数
+    victory-reward: 1000
+    defeat-penalty: 500
+    max-duration: 604800  # 7天最大战争持续时间
+
+# 经济系统配置
+economy:
+  # 初始资源
+  starting-resources:
+    gold: 1000
+    diamond: 100
+  
+  # 税收系统
+  tax:
+    default-rate: 0.1  # 10%
+    max-rate: 0.5      # 50%
+    collection-interval: 3600  # 1小时收税间隔
+
+# 贡献系统配置
+tribute:
+  # 贡献关系
+  relations:
+    max-tribute-rate: 0.3  # 最大30%贡献率
+    min-tribute-rate: 0.05 # 最小5%贡献率
+    processing-interval: 3600  # 1小时处理间隔
+
+# 聊天系统配置
+chat:
+  # 聊天格式
+  format:
+    country: "§7[§6{country}§7] §f{player}§7: §f{message}"
+    global: "§7[§aGlobal§7] §f{player}§7: §f{message}"
+    private: "§7[§dPrivate§7] §f{from} §7→ §f{to}§7: §f{message}"
+
+# 调试配置
+debug:
+  enabled: true
+  log-level: "INFO"
+  performance-monitoring: true

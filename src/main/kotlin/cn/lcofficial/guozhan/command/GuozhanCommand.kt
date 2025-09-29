@@ -306,7 +306,9 @@ object GuozhanCommand : TabExecutor {
         // 创建税收区域地图
         val mapView = TaxRegionMapUtil.createTaxRegionMap()
         if (mapView == null) {
-            cn.lcofficial.guozhan.config.Message.sendError(sender, "创建税收区域地图失败")
+            with(cn.lcofficial.guozhan.config.Message) {
+                sender.sendError("创建税收区域地图失败")
+            }
             return
         }
 
@@ -327,14 +329,16 @@ object GuozhanCommand : TabExecutor {
         mapItem.itemMeta = mapMeta
 
         // 添加到玩家物品栏
-        if (sender.inventory.firstEmpty() == -1) {
-            // 物品栏已满，掉落在地上
-            sender.world.dropItem(sender.location, mapItem)
-            cn.lcofficial.guozhan.config.Message.sendInfo(sender, "§a税收区域地图已掉落在你的脚下")
-        } else {
-            // 添加到物品栏
-            sender.inventory.addItem(mapItem)
-            cn.lcofficial.guozhan.config.Message.sendInfo(sender, "§a你获得了一张税收区域地图")
+        with(cn.lcofficial.guozhan.config.Message) {
+            if (sender.inventory.firstEmpty() == -1) {
+                // 物品栏已满，掉落在地上
+                sender.world.dropItem(sender.location, mapItem)
+                sender.sendInfo("§a税收区域地图已掉落在你的脚下")
+            } else {
+                // 添加到物品栏
+                sender.inventory.addItem(mapItem)
+                sender.sendInfo("§a你获得了一张税收区域地图")
+            }
         }
     }
 
@@ -1374,14 +1378,14 @@ object GuozhanCommand : TabExecutor {
             return
         }
 
-        if (targetUser.rank.value >= user.rank.value) {
+        if (targetUser?.rank?.value ?: 0 >= user?.rank?.value ?: 0) {
             sender.sendMessage("§c你不能驱逐比你等级高或相同的成员！")
             return
         }
 
         // 驱逐成员
-        targetUser.country = null
-        targetUser.save()
+        targetUser?.country = null
+        targetUser?.save()
 
         sender.sendMessage("§a成功驱逐了成员 $playerName")
 
@@ -1549,7 +1553,7 @@ object GuozhanCommand : TabExecutor {
             return
         }
 
-        if (targetUser.rank.value >= 2) {
+        if (targetUser?.rank?.value ?: 0 >= 2) {
             sender.sendMessage("§c该玩家已经是大臣或更高职位！")
             return
         }
@@ -1590,12 +1594,12 @@ object GuozhanCommand : TabExecutor {
             return
         }
 
-        if (targetUser.rank.value < 2) {
+        if (targetUser?.rank?.value ?: 0 < 2) {
             sender.sendMessage("§c该玩家不是大臣！")
             return
         }
 
-        if (targetUser.rank.value >= 3) {
+        if (targetUser?.rank?.value ?: 0 >= 3) {
             sender.sendMessage("§c不能罢免君主！")
             return
         }

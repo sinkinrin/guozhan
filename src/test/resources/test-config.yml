@@ -1,0 +1,130 @@
+# GuoZhan插件单元测试配置
+# 此配置用于MockBukkit单元测试环境
+
+# 数据库配置（内存数据库用于单元测试）
+database:
+  host: "localhost"
+  port: 3306
+  database: ":memory:"  # SQLite内存数据库
+  username: "test"
+  password: ""
+  
+  pool:
+    maximum-pool-size: 1
+    minimum-idle: 1
+    connection-timeout: 5000
+    idle-timeout: 60000
+    max-lifetime: 300000
+
+# 世界配置
+world:
+  default-world: "world"
+  allowed-worlds:
+    - "world"
+
+# 随机出生系统（单元测试）
+random-spawn:
+  enabled: true
+  spawn-radius: 100
+  max-attempts: 5
+  min-distance-from-spawn: 10
+  safety-check-radius: 1
+  min-y-level: 60
+  max-y-level: 80
+  allowed-worlds:
+    - "world"
+  unsafe-blocks:
+    - "LAVA"
+    - "WATER"
+
+# 国家系统配置（单元测试）
+country:
+  name:
+    min-length: 2
+    max-length: 8
+    allowed-characters: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+  
+  creation:
+    cost: 10
+    cooldown: 1
+  
+  members:
+    max-members: 5
+    invite-timeout: 10
+
+# 领土系统配置（单元测试）
+territory:
+  claim:
+    cost-per-chunk: 1
+    max-chunks-per-country: 5
+    min-distance-between-countries: 1
+  
+  protection:
+    block-break: true
+    block-place: true
+    entity-damage: true
+    container-access: false
+
+# 外交系统配置（单元测试）
+diplomacy:
+  relations:
+    default: "NEUTRAL"
+    change-cooldown: 1
+  
+  war:
+    damage-multiplier: 1.0
+    kill-reward: 1
+    victory-reward: 10
+    defeat-penalty: 5
+    max-duration: 60
+
+# 经济系统配置（单元测试）
+economy:
+  starting-resources:
+    gold: 100
+    diamond: 10
+  
+  tax:
+    default-rate: 0.1
+    max-rate: 0.2
+    collection-interval: 10
+
+# 贡献系统配置（单元测试）
+tribute:
+  relations:
+    max-tribute-rate: 0.1
+    min-tribute-rate: 0.01
+    processing-interval: 10
+
+# 聊天系统配置
+chat:
+  format:
+    country: "[{country}] {player}: {message}"
+    global: "[Global] {player}: {message}"
+    private: "[Private] {from} -> {to}: {message}"
+
+# 单元测试专用配置
+unit-testing:
+  # 禁用异步操作用于单元测试
+  disable-async: true
+  
+  # 使用模拟调度器
+  mock-scheduler: true
+  
+  # 快速执行模式
+  fast-execution: true
+  
+  # 测试数据
+  test-data:
+    players: ["TestPlayer1", "TestPlayer2"]
+    countries: ["TestCountry1", "TestCountry2"]
+    locations:
+      spawn: [0, 64, 0]
+      test1: [100, 64, 100]
+      test2: [-100, 64, -100]
+
+# 调试配置
+debug:
+  enabled: false
+  log-level: "WARN"
+  performance-monitoring: false

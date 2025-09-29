@@ -201,3 +201,54 @@ object EconomyManager {
         return true
     }
 }
+
+/**
+ * Player扩展方法：检查玩家是否有足够的物品
+ */
+fun Player.hasEnoughItem(material: Material, amount: Int): Boolean {
+    var totalAmount = 0
+    for (item in inventory.contents) {
+        if (item != null && item.type == material) {
+            totalAmount += item.amount
+            if (totalAmount >= amount) {
+                return true
+            }
+        }
+    }
+    return false
+}
+
+/**
+ * Player扩展方法：从玩家背包中扣除指定数量的物品
+ */
+fun Player.takeItem(material: Material, amount: Int): Boolean {
+    if (!hasEnoughItem(material, amount)) {
+        return false
+    }
+
+    var remainingAmount = amount
+    val contents = inventory.contents
+
+    for (i in contents.indices) {
+        val item = contents[i]
+        if (item != null && item.type == material) {
+            val itemAmount = item.amount
+            if (itemAmount <= remainingAmount) {
+                // 完全移除这个物品堆
+                contents[i] = null
+                remainingAmount -= itemAmount
+            } else {
+                // 部分移除
+                item.amount = itemAmount - remainingAmount
+                remainingAmount = 0
+            }
+
+            if (remainingAmount == 0) {
+                break
+            }
+        }
+    }
+
+    inventory.contents = contents
+    return true
+}

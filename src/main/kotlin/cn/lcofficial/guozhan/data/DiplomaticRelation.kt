@@ -9,13 +9,14 @@ import java.util.*
  * 外交关系表
  */
 object DiplomaticRelations : Table("gz_diplomatic_relations") {
-    val id = uuid("id").autoIncrement()
+    val id = uuid("id")
     val country1Id = uuid("country1_id")
     val country2Id = uuid("country2_id")
     val relationType = enumeration<RelationType>("relation_type")
+    val friendliness = integer("friendliness").default(50) // 友好度，0-100
     val createdAt = long("created_at")
     val updatedAt = long("updated_at")
-    
+
     override val primaryKey = PrimaryKey(id)
 }
 
@@ -38,6 +39,7 @@ class DiplomaticRelation(
     val country1Id: UUID,
     val country2Id: UUID,
     var relationType: RelationType,
+    var friendliness: Int = 50, // 友好度，0-100
     val createdAt: Long,
     var updatedAt: Long
 ) {
@@ -50,6 +52,7 @@ class DiplomaticRelation(
         country1Id = row[DiplomaticRelations.country1Id],
         country2Id = row[DiplomaticRelations.country2Id],
         relationType = row[DiplomaticRelations.relationType],
+        friendliness = row[DiplomaticRelations.friendliness],
         createdAt = row[DiplomaticRelations.createdAt],
         updatedAt = row[DiplomaticRelations.updatedAt]
     )
@@ -59,8 +62,9 @@ class DiplomaticRelation(
      */
     fun save() {
         transaction {
-            DiplomaticRelations.update({ DiplomaticRelations.id eq id }) {
+            DiplomaticRelations.update({ DiplomaticRelations.id eq this@DiplomaticRelation.id }) {
                 it[relationType] = this@DiplomaticRelation.relationType
+                it[friendliness] = this@DiplomaticRelation.friendliness
                 it[updatedAt] = System.currentTimeMillis()
             }
             this@DiplomaticRelation.updatedAt = System.currentTimeMillis()

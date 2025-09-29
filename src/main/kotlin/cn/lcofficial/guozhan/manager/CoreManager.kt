@@ -234,14 +234,14 @@ object CoreManager {
      * 异步更新BossBar的显示对象
      */
     private fun updateBossBarPlayersAsync(country: Country, attackerCountry: Country?, bossBar: BossBar) {
-        Bukkit.getScheduler().runTaskAsynchronously(Guozhan.instance) {
+        Bukkit.getScheduler().runTaskAsynchronously(Guozhan.instance, Runnable {
             val displayPlayers = getDisplayPlayers(country, attackerCountry)
 
             // 回到主线程更新 BossBar
-            Bukkit.getScheduler().runTask(Guozhan.instance) {
+            Bukkit.getScheduler().runTask(Guozhan.instance, Runnable {
                 updateBossBarSync(country, bossBar, displayPlayers)
-            }
-        }
+            })
+        })
     }
 
     /**

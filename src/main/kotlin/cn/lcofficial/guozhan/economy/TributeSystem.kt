@@ -8,6 +8,7 @@ import cn.lcofficial.guozhan.manager.EconomyManager
 import cn.lcofficial.guozhan.manager.UserManager.user
 import org.bukkit.Bukkit
 import org.bukkit.Material
+import org.bukkit.command.CommandSender
 import org.bukkit.entity.Player
 import org.bukkit.inventory.ItemStack
 import java.util.*
@@ -34,7 +35,7 @@ object TributeSystem {
         Bukkit.getScheduler().runTaskTimerAsynchronously(Guozhan.instance, Runnable {
             try {
                 val processedCount = processAutomaticTributes()
-                Guozhan.instance.logger.info("自动贡献定时任务完成，处理了$processedCount个贡献关系")
+                Guozhan.instance.logger.info("自动贡献定时任务完成，处理了${processedCount}个贡献关系")
             } catch (e: Exception) {
                 Guozhan.instance.logger.severe("自动贡献定时任务出错: ${e.message}")
                 e.printStackTrace()
@@ -301,7 +302,7 @@ object TributeSystem {
         val relation = cn.lcofficial.guozhan.manager.DiplomacyManager.getRelation(sourceCountry, targetCountry)
         
         // 如果已经是同盟关系，不需要再提升
-        if (relation.relationType == cn.lcofficial.guozhan.data.RelationType.ALLIANCE) {
+        if (relation.relationType == cn.lcofficial.guozhan.data.RelationType.ALLIED) {
             return
         }
         
@@ -337,9 +338,9 @@ object TributeSystem {
                 if (relation.friendliness >= 90) {
                     // 提升为同盟关系
                     cn.lcofficial.guozhan.manager.DiplomacyManager.updateRelation(
-                        sourceCountry, 
-                        targetCountry, 
-                        cn.lcofficial.guozhan.data.RelationType.ALLIANCE
+                        sourceCountry,
+                        targetCountry,
+                        cn.lcofficial.guozhan.data.RelationType.ALLIED
                     )
                 }
             }
@@ -380,7 +381,7 @@ object TributeSystem {
                 
                 // 通知结果
                 Bukkit.getScheduler().runTask(Guozhan.instance, Runnable {
-                    sender.sendMessage("§e[国家贡献] §f处理完成！共处理了 §6$processedCount §f个贡献关系，耗时 §6$processingTime §f秒")
+                    sender.sendMessage("§e[国家贡献] §f处理完成！共处理了 §6${processedCount} §f个贡献关系，耗时 §6${processingTime} §f秒")
                 })
             } catch (e: Exception) {
                 Guozhan.instance.logger.severe("手动处理贡献关系出错: ${e.message}")
@@ -506,7 +507,7 @@ object TributeSystem {
             }
         }
         
-        Guozhan.instance.logger.info("自动贡献处理完成，共处理了$processedCount个贡献关系")
+        Guozhan.instance.logger.info("自动贡献处理完成，共处理了${processedCount}个贡献关系")
         return processedCount
     }
     
@@ -524,7 +525,7 @@ object TributeSystem {
             cn.lcofficial.guozhan.data.RelationType.FRIENDLY -> "§a友好"
             cn.lcofficial.guozhan.data.RelationType.NEUTRAL -> "§f中立"
             cn.lcofficial.guozhan.data.RelationType.HOSTILE -> "§c敌对"
-            cn.lcofficial.guozhan.data.RelationType.ALLIANCE -> "§b同盟"
+            cn.lcofficial.guozhan.data.RelationType.ALLIED -> "§b同盟"
             cn.lcofficial.guozhan.data.RelationType.WAR -> "§4战争"
             else -> "§f未知"
         }

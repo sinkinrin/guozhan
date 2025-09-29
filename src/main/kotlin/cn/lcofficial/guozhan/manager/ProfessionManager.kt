@@ -10,10 +10,10 @@ import org.bukkit.potion.PotionEffectType
 object ProfessionManager {
     private val professionEffects = mapOf(
         Profession.SCOUT to PotionEffectType.SPEED,
-        Profession.CRAFTSMAN to PotionEffectType.FAST_DIGGING,
-        Profession.BERSERKER to PotionEffectType.INCREASE_DAMAGE,
-        Profession.GUARDIAN to PotionEffectType.DAMAGE_RESISTANCE,
-        Profession.LEAPER to PotionEffectType.JUMP,
+        Profession.CRAFTSMAN to PotionEffectType.HASTE,
+        Profession.BERSERKER to PotionEffectType.STRENGTH,
+        Profession.GUARDIAN to PotionEffectType.RESISTANCE,
+        Profession.LEAPER to PotionEffectType.JUMP_BOOST,
         Profession.PRIEST to PotionEffectType.REGENERATION,
         Profession.CONQUEROR to null // 特殊处理
     )

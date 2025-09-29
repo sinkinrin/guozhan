@@ -26,6 +26,7 @@ object CountryManager {
                     it[Countries.shield],
                     it[Countries.gold],
                     it[Countries.diamond],
+                    it[Countries.economyPoints],
                     UUID.fromString(it[Countries.capital].value),
                     it[Countries.coreHealth],
                     it[Countries.coreLocationX],
@@ -59,6 +60,21 @@ object CountryManager {
         country
     }
 
+    /**
+     * 根据名称获取国家（别名方法）
+     */
+    fun getCountryByName(name: String): Country? = getByName(name)
+
+    /**
+     * 根据ID获取国家（别名方法）
+     */
+    fun getCountryById(id: UUID): Country? = getCountry(id)
+
+    /**
+     * 获取所有国家
+     */
+    fun getAllCountries(): Collection<Country> = countries.values
+
     fun create(player: Player, city: City, name: String): Country? = transaction {
         val user = player.user()
         if (user.country != null) {
@@ -71,6 +87,7 @@ object CountryManager {
             shield = false,
             gold = 0,
             diamond = 0,
+            economyPoints = 0,
             capitalId = city.id
         )
 
@@ -84,6 +101,7 @@ object CountryManager {
             it[Countries.shield] = country.shield
             it[Countries.gold] = country.gold
             it[Countries.diamond] = country.diamond
+            it[Countries.economyPoints] = country.economyPoints
             it[Countries.coreHealth] = country.coreHealth
             it[Countries.coreLocationX] = country.coreLocationX
             it[Countries.coreLocationY] = country.coreLocationY
@@ -115,6 +133,7 @@ object CountryManager {
                 it[Countries.shield],
                 it[Countries.gold],
                 it[Countries.diamond],
+                it[Countries.economyPoints],
                 UUID.fromString(it[Countries.capital].value),
                 it[Countries.coreHealth],
                 it[Countries.coreLocationX],

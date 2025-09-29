@@ -121,7 +121,7 @@ class TributeCommand : CommandExecutor, TabCompleter {
         }
         
         // 获取历史记录
-        val history = TributeSystem.getTributeHistory(country.id)
+        val history = TributeSystem.getTributeHistory(country)
         if (history.isEmpty()) {
             sender.sendMessage("§e[贡献系统] §f国家 §6${country.name} §f没有任何贡献历史记录")
             return
@@ -195,7 +195,7 @@ class TributeCommand : CommandExecutor, TabCompleter {
         }
         
         // 建立贡献关系
-        val result = TributeSystem.establishTributeRelation(tributeCountry.id, receivingCountry.id, tributeRate)
+        val result = TributeSystem.establishTributeRelation(tributeCountry, receivingCountry, tributeRate)
         if (result) {
             sender.sendMessage("§a成功建立贡献关系: §f${tributeCountry.name} §a将向 §f${receivingCountry.name} §a贡献 §f${tributeRate}% §a的资源")
         } else {
@@ -233,7 +233,7 @@ class TributeCommand : CommandExecutor, TabCompleter {
         }
         
         // 解除贡献关系
-        val result = TributeSystem.removeTributeRelation(tributeCountry.id, receivingCountry.id)
+        val result = TributeSystem.removeTributeRelation(tributeCountry, receivingCountry)
         if (result) {
             sender.sendMessage("§a成功解除贡献关系: §f${tributeCountry.name} §a不再向 §f${receivingCountry.name} §a贡献资源")
         } else {

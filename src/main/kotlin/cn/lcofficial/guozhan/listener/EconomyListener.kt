@@ -2,8 +2,8 @@ package cn.lcofficial.guozhan.listener
 
 import cn.lcofficial.guozhan.Guozhan
 import cn.lcofficial.guozhan.data.ResourceType
-import cn.lcofficial.guozhan.extensions.user
 import cn.lcofficial.guozhan.manager.TerritoryManager
+import cn.lcofficial.guozhan.manager.UserManager
 import org.bukkit.Bukkit
 import org.bukkit.event.EventHandler
 import org.bukkit.event.Listener
@@ -46,7 +46,7 @@ class EconomyListener : Listener {
     @EventHandler
     fun onPlayerJoin(event: PlayerJoinEvent) {
         // 获取玩家的用户数据
-        val user = event.player.user()
+        val user = UserManager.getUser(event.player.uniqueId) ?: return
         
         // 如果玩家属于某个国家，发送国家经济状况信息
         val country = user.country
