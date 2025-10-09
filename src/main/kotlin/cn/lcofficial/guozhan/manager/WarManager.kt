@@ -11,14 +11,14 @@ import org.bukkit.entity.Player
 import org.bukkit.event.entity.EntityDamageByEntityEvent
 import org.bukkit.event.entity.PlayerDeathEvent
 import java.util.*
-import kotlin.collections.HashMap
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * 战争管理器，处理国家间战争状态的特殊逻辑
  */
 object WarManager {
     // 战争状态缓存，记录战争开始时间
-    private val warStartTimes = HashMap<String, Long>()
+    private val warStartTimes = ConcurrentHashMap<String, Long>()
     
     // 战争状态冷却时间（毫秒）
     private const val WAR_COOLDOWN = 24 * 60 * 60 * 1000L // 24小时
@@ -212,12 +212,27 @@ object WarManager {
         
         // 结束超时的战争
         for (warId in expiredWars) {
-            val countryIds = warId.split("_")
-            val country1 = CountryManager.getCountryById(UUID.fromString(countryIds[0]))
-            val country2 = CountryManager.getCountryById(UUID.fromString(countryIds[1]))
-            
-            if (country1 != null && country2 != null) {
-                endWar(country1, country2, null)
+            try {
+                val countryIds = warId.split("_")
+                if (countryIds.size != 2) {
+                    Guozhan.instance.logger.warning("无效的战争ID格式: $warId")
+                    continue
+                }
+
+                val country1Id = UUID.fromString(countryIds[0])
+                val country2Id = UUID.fromString(countryIds[1])
+                val country1 = CountryManager.getCountryById(country1Id)
+                val country2 = CountryManager.getCountryById(country2Id)
+
+                if (country1 != null && country2 != null) {
+                    endWar(country1, country2, null)
+                } else {
+                    Guozhan.instance.logger.warning("无法找到战争中的国家: $warId")
+                }
+            } catch (e: IllegalArgumentException) {
+                Guozhan.instance.logger.warning("解析战争ID失败: $warId - ${e.message}")
+            } catch (e: Exception) {
+                Guozhan.instance.logger.warning("处理超时战争时发生错误: $warId - ${e.message}")
             }
         }
     }

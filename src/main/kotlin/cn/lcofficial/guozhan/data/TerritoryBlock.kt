@@ -1,6 +1,7 @@
 package cn.lcofficial.guozhan.data
 
 import org.jetbrains.exposed.dao.id.IdTable
+import org.jetbrains.exposed.dao.id.EntityID
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.jetbrains.exposed.sql.update
 import java.util.*
@@ -107,49 +108,18 @@ class TerritoryBlock(
     
     /**
      * 更新区块忠诚度
-     * 根据接壤面数减少忠诚度
+     * 注意：忠诚度系统已统一到LoyaltySystem.kt中管理
+     * 此方法保留用于兼容性，但实际逻辑已移至统一系统
      * @return 更新后的忠诚度
      */
+    @Deprecated("忠诚度更新已统一到LoyaltySystem.kt中管理", ReplaceWith("LoyaltySystem"))
     fun updateLoyalty(): Int {
-        if (ownerId == null || isCapital) return loyalty // 无主区块或首都区块不减少忠诚度
-        
-        val currentTime = System.currentTimeMillis()
-        // 每5分钟检查一次忠诚度
-        if (currentTime - lastLoyaltyUpdateTime < 5 * 60 * 1000) return loyalty
-        
-        val adjacentFaces = calculateAdjacentFaces()
-        val loyaltyReductionChance = when (adjacentFaces) {
-            0 -> 0.0 // 完全接壤，不减少
-            1 -> 0.1 // 1个面不接壤，10%概率减少
-            2 -> 0.35 // 2个面不接壤，35%概率减少
-            3 -> 0.75 // 3个面不接壤，75%概率减少
-            else -> 1.0 // 4个面都不接壤，100%概率减少
-        }
-        
-        // 随机决定是否减少忠诚度
-        if (Random().nextDouble() < loyaltyReductionChance) {
-            // 每5分钟减少4%的忠诚度
-            loyalty -= 4
-            if (loyalty < 0) loyalty = 0
-            
-            // 如果忠诚度为0，处理相应逻辑
-            if (loyalty == 0) {
-                if (isCapital) {
-                    // 王城区块忠诚度为0，触发灭国
-                    val country = owner
-                    if (country != null) {
-                        // 在实际实现中，这里应该调用灭国的方法
-                        // 暂时先清除所有权
-                        ownerId = null
-                    }
-                } else {
-                    // 普通区块忠诚度为0，变为无主区块
-                    ownerId = null
-                }
-            }
-        }
-        
-        lastLoyaltyUpdateTime = currentTime
+        // 忠诚度更新逻辑已移至LoyaltySystem.kt中统一管理
+        // 此方法保留用于向后兼容，但不再执行实际的更新逻辑
+        // 如需手动更新忠诚度，请使用LoyaltySystem类
+
+        // 只更新时间戳，避免重复处理
+        lastLoyaltyUpdateTime = System.currentTimeMillis()
         save()
         return loyalty
     }
@@ -188,7 +158,7 @@ class TerritoryBlock(
     fun save() = transaction {
         TerritoryBlocks.update({ TerritoryBlocks.id eq id.toString() }) {
             it[TerritoryBlocks.loyalty] = loyalty
-            it[TerritoryBlocks.owner] = ownerId?.toString()
+            it[TerritoryBlocks.owner] = ownerId?.let { EntityID(it.toString(), Countries) }
             it[TerritoryBlocks.resourceType] = resourceType
             it[TerritoryBlocks.resourceAmount] = resourceAmount
             it[TerritoryBlocks.lastHarvestTime] = lastHarvestTime

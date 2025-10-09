@@ -22,7 +22,8 @@ object CityManager {
                     it[Cities.x],
                     it[Cities.z],
                     it[Cities.loyalty],
-                    UUID.fromString(it[Cities.owner]?.value)
+                    // 安全处理可空的owner值，避免空指针异常
+                    it[Cities.owner]?.value?.let { ownerId -> UUID.fromString(ownerId) }
                 )
             }
             if (city != null) cities[id] = city
@@ -56,7 +57,8 @@ object CityManager {
                     it[Cities.x],
                     it[Cities.z],
                     it[Cities.loyalty],
-                    UUID.fromString(it[Cities.owner]?.value)
+                    // 安全处理可空的owner值，避免空指针异常
+                    it[Cities.owner]?.value?.let { ownerId -> UUID.fromString(ownerId) }
                 )
             }
             if (city != null) cities[city.id] = city

@@ -14,8 +14,17 @@ object UserManager {
     fun getUser(uniqueId: UUID): User? = transaction{
         var user = users[uniqueId]
         if (user == null) {
-            user = Users.selectAll().where { Users.id eq uniqueId.toString() }.firstOrNull()?.let {
-                User(UUID.fromString(it[Users.id].value), it[Users.name])
+            user = Users.selectAll().where { Users.id eq uniqueId.toString() }.firstOrNull()?.let { row ->
+                User(
+                    uniqueId = UUID.fromString(row[Users.id].value),
+                    name = row[Users.name],
+                    countryId = row[Users.countryId]?.value?.let { UUID.fromString(it) },
+                    rank = row[Users.rank],
+                    title = row[Users.title],
+                    profession = row[Users.profession],
+                    professionLevel = row[Users.professionLevel],
+                    claimMode = row[Users.claimMode]
+                )
             }
             if (user != null) users[uniqueId] = user
         }
@@ -29,6 +38,7 @@ object UserManager {
         Users.insert {
             it[Users.id] = user.uniqueId.toString()
             it[Users.name] = user.name
+            it[Users.claimMode] = user.claimMode
         }
         user
     }

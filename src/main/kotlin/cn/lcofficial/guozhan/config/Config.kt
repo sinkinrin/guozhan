@@ -1,6 +1,7 @@
 package cn.lcofficial.guozhan.config
 
 import cn.lcofficial.guozhan.Guozhan
+import org.bukkit.Material
 
 object Config : Configuration("config.yml") {
     internal object Database : StaticLazy {
@@ -17,6 +18,29 @@ object Config : Configuration("config.yml") {
 
     internal object World : StaticLazy {
         var spawnRadius by int("world.spawnRadius", 100)
+    }
+
+    internal object Country : StaticLazy {
+        var maxNameLength by int("country.max-name-length", 12)
+        var minNameLength by int("country.min-name-length", 3)
+        var coreHealthMax by int("country.core-health-max", 1000)
+        var coreRegenInterval by int("country.core-regen-interval", 60)
+        var coreRegenAmount by int("country.core-regen-amount", 1)
+
+        object Creation : StaticLazy {
+            object ItemCost : StaticLazy {
+                private var materialString by string("country.creation.item_cost.material", "IRON_INGOT")
+                var amount by int("country.creation.item_cost.amount", 64)
+
+                val material: Material
+                    get() = try {
+                        Material.valueOf(materialString.uppercase())
+                    } catch (e: IllegalArgumentException) {
+                        Guozhan.instance.logger.warning("无效的物品类型配置: $materialString，使用默认值 IRON_INGOT")
+                        Material.IRON_INGOT
+                    }
+            }
+        }
     }
 
     internal object BossBar : StaticLazy {
@@ -41,11 +65,21 @@ object Config : Configuration("config.yml") {
         var maxYLevel by int("random-spawn.max-y-level", 120)
     }
 
+    internal object Technology : StaticLazy {
+        var researchDuration by int("technology.research_duration", 0)
+        var enableProgressNotifications by bool("technology.enable_progress_notifications", true)
+        var progressNotificationInterval by int("technology.progress_notification_interval", 3600)
+    }
+
     override fun init(plugin: Guozhan) {
         Database.init()
         World.init()
+        Country.init()
+        Country.Creation.init()
+        Country.Creation.ItemCost.init()
         BossBar.init()
         RandomSpawn.init()
+        Technology.init()
         super.init(plugin)
     }
 }

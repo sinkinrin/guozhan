@@ -33,12 +33,20 @@ class WarListener : Listener {
     
     /**
      * 启动战争超时检查任务
+     * 使用Folia的GlobalRegionScheduler
      */
     private fun startWarTimeoutTask() {
-        // 每小时检查一次战争超时
-        Bukkit.getScheduler().runTaskTimer(Guozhan.instance, Runnable {
-            WarManager.checkWarTimeout()
-        }, 20 * 60 * 60, 20 * 60 * 60) // 1小时 = 20 ticks/s * 60s * 60min
+        // 每小时检查一次战争超时 - 使用Folia调度器
+        cn.lcofficial.guozhan.util.runRepeat(20 * 60 * 60, 20 * 60 * 60) { task ->
+            try {
+                WarManager.checkWarTimeout()
+            } catch (e: Exception) {
+                Guozhan.instance.logger.severe("战争超时检查任务执行出错: ${e.message}")
+                e.printStackTrace()
+            }
+        }
+
+        Guozhan.instance.logger.info("战争超时检查任务已启动 (Folia GlobalRegionScheduler)")
     }
     
     /**

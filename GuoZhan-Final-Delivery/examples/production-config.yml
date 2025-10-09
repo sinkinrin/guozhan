@@ -1,0 +1,200 @@
+# GuoZhan 生产环境配置示例
+# 适用于正式服务器，注重性能和稳定性
+
+# 数据库配置 - 生产环境推荐MySQL
+database:
+  type: "mysql"
+  host: "localhost"
+  port: 3306
+  database: "guozhan"
+  username: "guozhan_user"
+  password: "your_secure_password_here"  # 请修改为安全密码
+  pool-size: 15                          # 根据服务器负载调整
+
+# 世界设置
+world:
+  name: "world"
+  spawn-radius: 10000      # 较大的保护区域
+  min-y: 64
+  max-y: 100
+
+# 国家设置
+country:
+  max-name-length: 12
+  min-name-length: 3
+  creation:
+    item_cost:
+      material: "IRON_INGOT"
+      amount: 128            # 生产环境建议更高的建国成本
+  core-health-max: 1500     # 更高的核心血量
+  core-regen-interval: 60
+  core-regen-amount: 2      # 更快的血量回复
+
+# 领土设置
+territory:
+  max-loyalty: 100
+  loyalty-decay-interval: 600  # 更长的检查间隔减少性能消耗
+  loyalty-restore-cost: 1.0    # 更高的恢复成本
+
+# 王战设置
+war:
+  day: 6                    # 周六
+  prepare-hour: 19
+  prepare-minute: 0
+  start-hour: 19
+  start-minute: 30          # 更长的准备时间
+  end-hour: 22
+  end-minute: 0
+  core-territory-range: [-100, 99]     # 更大的核心区域
+  war-territory-range: [-200, 199]     # 更大的战争区域
+
+# 科技设置
+technology:
+  research_duration: 3600               # 1小时研究时间增加策略性
+  enable_progress_notifications: true
+  progress_notification_interval: 1800  # 30分钟通知一次
+
+# 护盾设置
+shield:
+  cost-per-hour: 8          # 更高的护盾成本
+  cooldown-minutes: 60      # 更长的冷却时间
+  max-duration-hours: 12    # 更短的最大持续时间
+  min-duration-hours: 2     # 更长的最小持续时间
+  max-aspect-ratio: 1.5     # 更严格的长宽比限制
+  diamond-to-gold-rate: 15  # 更高的转换率
+
+# 职业设置
+profession:
+  unlock-delay-hours: 6     # 更长的解锁延迟
+  upgrade-delay-hours: 48   # 更长的升级延迟
+  upgrade-cost: 100         # 更高的升级成本
+
+# 税收设置 - 生产环境优化的税收区域
+tax:
+  regions:
+    "失落蛮荒":
+      range: 25000
+      gold-rate: 0.003
+      diamond-rate: 0.0015
+    "远征前线":
+      range: 18000
+      gold-rate: 0.006
+      diamond-rate: 0.003
+    "纷争之地":
+      range: 12000
+      gold-rate: 0.010
+      diamond-rate: 0.006
+    "开拓边疆":
+      range: 7000
+      gold-rate: 0.014
+      diamond-rate: 0.010
+    "内陆邦畿":
+      range: 3500
+      gold-rate: 0.018
+      diamond-rate: 0.014
+    "核心疆域":
+      range: 1500
+      gold-rate: 0.022
+      diamond-rate: 0.022
+
+# BossBar 配置 - 性能优化
+bossbar:
+  enabled: true
+  display-range: 150
+  update-interval: 40       # 降低更新频率
+  title-format: "{country} 核心血量"
+  show-to-attacker-country: true
+  show-to-defender-country: true
+  cache-duration: 60        # 更长的缓存时间
+
+# 随机出生系统 - 生产环境优化
+random-spawn:
+  enabled: true
+  spawn-radius: 8000        # 更大的出生范围
+  max-attempts: 30          # 减少尝试次数避免卡顿
+  safety-check-radius: 5    # 更大的安全检查范围
+  min-distance-from-spawn: 2000  # 更远的最小距离
+  allowed-worlds:
+    - "world"
+  unsafe-blocks:
+    - "LAVA"
+    - "WATER"
+    - "FIRE"
+    - "MAGMA_BLOCK"
+    - "CACTUS"
+    - "SWEET_BERRY_BUSH"
+  min-y-level: 60
+  max-y-level: 120
+
+# 消息设置
+messages:
+  prefix: "§6[国战] §r"
+  no-permission: "§c你没有权限执行此操作"
+  country-not-found: "§c国家不存在"
+  player-not-found: "§c玩家不存在"
+  not-in-country: "§c你不在任何国家中"
+  not-owner: "§c只有君主才能执行此操作"
+  not-admin: "§c只有君主或大臣才能执行此操作"
+
+# 性能优化设置
+performance:
+  # 缓存设置
+  cache:
+    territory-cache-size: 1000      # 领土缓存大小
+    country-cache-size: 200         # 国家缓存大小
+    user-cache-size: 500            # 用户缓存大小
+    cache-expire-time: 300000       # 缓存过期时间（毫秒）
+  
+  # 数据库优化
+  database:
+    batch-size: 50                  # 批处理大小
+    query-timeout: 30               # 查询超时（秒）
+    connection-test-query: "SELECT 1"
+  
+  # 任务调度优化
+  scheduler:
+    loyalty-check-interval: 6000    # 忠诚度检查间隔（tick）
+    tax-collection-interval: 72000  # 税收收集间隔（tick）
+    shield-check-interval: 6000     # 护盾检查间隔（tick）
+
+# 安全设置
+security:
+  # 操作限制
+  limits:
+    max-countries-per-player: 1     # 每个玩家最大国家数
+    max-invites-per-hour: 5         # 每小时最大邀请数
+    max-claims-per-minute: 10       # 每分钟最大占领数
+    max-chat-length: 200            # 最大聊天长度
+  
+  # 反作弊
+  anti-cheat:
+    enable-speed-check: true        # 启用速度检查
+    enable-fly-check: true          # 启用飞行检查
+    max-block-place-speed: 20       # 最大方块放置速度（每秒）
+
+# 日志设置
+logging:
+  level: "INFO"                     # 日志级别：DEBUG, INFO, WARN, ERROR
+  file-logging: true                # 启用文件日志
+  max-log-files: 10                 # 最大日志文件数
+  log-rotation-size: "10MB"         # 日志轮转大小
+  
+  # 特定功能日志
+  features:
+    gm-operations: true             # GM操作日志
+    economy-transactions: true      # 经济交易日志
+    territory-changes: true         # 领土变更日志
+    war-events: true                # 战争事件日志
+
+# 备份设置
+backup:
+  auto-backup: true                 # 启用自动备份
+  backup-interval: 21600            # 备份间隔（秒，6小时）
+  max-backup-files: 7               # 最大备份文件数
+  backup-path: "backups/"           # 备份路径
+  
+  # 备份内容
+  include:
+    database: true                  # 包含数据库
+    config: true                    # 包含配置文件
+    logs: false                     # 不包含日志文件

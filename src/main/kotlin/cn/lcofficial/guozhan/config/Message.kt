@@ -97,28 +97,65 @@ object Message : Configuration("message.yml") {
      * 发送错误消息
      */
     fun CommandSender.sendError(message: String) {
-        this.sendMessage("§c$message")
+        this.sendMessage("§c[国战] §f$message")
     }
-    
+
     /**
-     * 发送信息
+     * 发送成功消息
+     */
+    fun CommandSender.sendSuccess(message: String) {
+        this.sendMessage("§a[国战] §f$message")
+    }
+
+    /**
+     * 发送警告消息
+     */
+    fun CommandSender.sendWarning(message: String) {
+        this.sendMessage("§e[国战] §f$message")
+    }
+
+    /**
+     * 发送信息消息
      */
     fun CommandSender.sendInfo(message: String) {
-        this.sendMessage("§a$message")
+        this.sendMessage("§b[国战] §f$message")
     }
-    
+
     /**
-     * 发送错误消息
+     * 发送用法提示
      */
-    fun Player.sendError(message: String) {
-        this.sendMessage("§c$message")
+    fun CommandSender.sendUsage(command: String, description: String = "") {
+        this.sendMessage("§e[用法] §f$command")
+        if (description.isNotEmpty()) {
+            this.sendMessage("§7$description")
+        }
     }
-    
+
     /**
-     * 发送信息
+     * 发送权限错误
      */
-    fun Player.sendInfo(message: String) {
-        this.sendMessage("§a$message")
+    fun CommandSender.sendPermissionError(requiredPermission: String) {
+        this.sendMessage("§c[权限] §f你没有权限执行此操作！")
+        this.sendMessage("§7需要权限：$requiredPermission")
     }
+
+    /**
+     * 发送国家检查错误
+     */
+    fun CommandSender.sendNoCountryError() {
+        this.sendMessage("§c[国战] §f你不属于任何国家！")
+        this.sendMessage("§7使用 §f/u create <国家名> §7创建国家")
+    }
+
+    /**
+     * Player扩展方法
+     */
+    fun Player.sendError(message: String) = (this as CommandSender).sendError(message)
+    fun Player.sendSuccess(message: String) = (this as CommandSender).sendSuccess(message)
+    fun Player.sendWarning(message: String) = (this as CommandSender).sendWarning(message)
+    fun Player.sendInfo(message: String) = (this as CommandSender).sendInfo(message)
+    fun Player.sendUsage(command: String, description: String = "") = (this as CommandSender).sendUsage(command, description)
+    fun Player.sendPermissionError(requiredPermission: String) = (this as CommandSender).sendPermissionError(requiredPermission)
+    fun Player.sendNoCountryError() = (this as CommandSender).sendNoCountryError()
 
 }

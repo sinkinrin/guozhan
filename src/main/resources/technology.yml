@@ -1,0 +1,297 @@
+# GuoZhan 科技系统配置文件
+
+# 科技系统设置
+settings:
+  research_time_base: 3600000      # 基础研究时间（1小时，毫秒）
+  research_time_multiplier: 1.5    # 等级时间倍数
+  max_concurrent_research: 1       # 最大同时研究数量
+  effect_update_interval: 20       # 效果更新间隔（tick）
+  enable_research_queue: false     # 是否启用研究队列
+  auto_complete_research: true     # 是否自动完成研究
+
+# 科技定义
+technologies:
+  # 基础农业科技
+  farming_basic:
+    name: "基础农业"
+    description: "提升农作物产量和食物效果，为国民提供更好的营养"
+    icon: WHEAT
+    max_level: 3
+    category: "basic"
+    enabled: true
+    prerequisites: []
+    costs:
+      1:
+        gold: 500
+        diamond: 5
+        territory_income: 2
+      2:
+        gold: 1000
+        diamond: 10
+        territory_income: 4
+      3:
+        gold: 2000
+        diamond: 20
+        territory_income: 8
+    effects:
+      1:
+        saturation:
+          type: POTION_EFFECT
+          effect: SATURATION
+          amplifier: 0
+          value: 1.0
+          duration: -1
+      2:
+        saturation:
+          type: POTION_EFFECT
+          effect: SATURATION
+          amplifier: 1
+          value: 2.0
+          duration: -1
+      3:
+        food_bonus:
+          type: PASSIVE_ABILITY
+          ability: FOOD_BONUS
+          value: 0.25
+
+  # 基础军事科技
+  military_basic:
+    name: "基础军事"
+    description: "提升战斗能力和装备效果，增强国家军事实力"
+    icon: IRON_SWORD
+    max_level: 3
+    category: "basic"
+    enabled: true
+    prerequisites: []
+    costs:
+      1:
+        gold: 800
+        diamond: 8
+        territory_income: 3
+      2:
+        gold: 1600
+        diamond: 16
+        territory_income: 6
+      3:
+        gold: 3200
+        diamond: 32
+        territory_income: 12
+    effects:
+      1:
+        strength:
+          type: POTION_EFFECT
+          effect: STRENGTH
+          amplifier: 0
+          value: 1.0
+          duration: -1
+      2:
+        strength:
+          type: POTION_EFFECT
+          effect: STRENGTH
+          amplifier: 1
+          value: 2.0
+          duration: -1
+      3:
+        attack_damage:
+          type: ATTRIBUTE_MODIFIER
+          attribute: ATTACK_DAMAGE
+          value: 2.0
+
+  # 基础采矿科技
+  mining_basic:
+    name: "基础采矿"
+    description: "提升挖矿效率和矿物产量，增加资源收集速度"
+    icon: DIAMOND_PICKAXE
+    max_level: 3
+    category: "basic"
+    enabled: true
+    prerequisites: []
+    costs:
+      1:
+        gold: 600
+        diamond: 6
+        territory_income: 2
+      2:
+        gold: 1200
+        diamond: 12
+        territory_income: 4
+      3:
+        gold: 2400
+        diamond: 24
+        territory_income: 8
+    effects:
+      1:
+        haste:
+          type: POTION_EFFECT
+          effect: HASTE
+          amplifier: 0
+          value: 1.0
+          duration: -1
+      2:
+        haste:
+          type: POTION_EFFECT
+          effect: HASTE
+          amplifier: 1
+          value: 2.0
+          duration: -1
+      3:
+        mining_bonus:
+          type: PASSIVE_ABILITY
+          ability: MINING_BONUS
+          value: 0.15
+
+  # 基础建筑科技
+  construction_basic:
+    name: "基础建筑"
+    description: "提升建筑效率和耐久度，加快国家基础设施建设"
+    icon: STONE_BRICKS
+    max_level: 2
+    category: "basic"
+    enabled: true
+    prerequisites: []
+    costs:
+      1:
+        gold: 700
+        diamond: 7
+        territory_income: 3
+      2:
+        gold: 1400
+        diamond: 14
+        territory_income: 6
+    effects:
+      1:
+        resistance:
+          type: POTION_EFFECT
+          effect: RESISTANCE
+          amplifier: 0
+          value: 1.0
+          duration: -1
+      2:
+        construction_speed:
+          type: PASSIVE_ABILITY
+          ability: CONSTRUCTION_SPEED
+          value: 0.20
+
+  # 高级农业科技（需要基础农业）
+  farming_advanced:
+    name: "高级农业"
+    description: "大幅提升农业效率，解锁特殊农业能力"
+    icon: GOLDEN_CARROT
+    max_level: 2
+    category: "advanced"
+    enabled: true
+    prerequisites: ["farming_basic"]
+    costs:
+      1:
+        gold: 3000
+        diamond: 30
+        territory_income: 15
+      2:
+        gold: 6000
+        diamond: 60
+        territory_income: 30
+    effects:
+      1:
+        regeneration:
+          type: POTION_EFFECT
+          effect: REGENERATION
+          amplifier: 0
+          value: 1.0
+          duration: -1
+      2:
+        auto_replant:
+          type: SPECIAL_ABILITY
+          ability: AUTO_REPLANT
+          value: 1.0
+
+  # 高级军事科技（需要基础军事）
+  military_advanced:
+    name: "高级军事"
+    description: "解锁强大的军事能力，大幅提升战斗效果"
+    icon: DIAMOND_SWORD
+    max_level: 2
+    category: "advanced"
+    enabled: true
+    prerequisites: ["military_basic"]
+    costs:
+      1:
+        gold: 4000
+        diamond: 40
+        territory_income: 20
+      2:
+        gold: 8000
+        diamond: 80
+        territory_income: 40
+    effects:
+      1:
+        absorption:
+          type: POTION_EFFECT
+          effect: ABSORPTION
+          amplifier: 1
+          value: 2.0
+          duration: -1
+      2:
+        combat_mastery:
+          type: SPECIAL_ABILITY
+          ability: COMBAT_MASTERY
+          value: 1.0
+
+  # 经济科技（需要基础建筑）
+  economy_advanced:
+    name: "经济发展"
+    description: "提升国家经济效率，增加税收和贸易收益"
+    icon: GOLD_INGOT
+    max_level: 3
+    category: "advanced"
+    enabled: true
+    prerequisites: ["construction_basic"]
+    costs:
+      1:
+        gold: 2500
+        diamond: 25
+        territory_income: 12
+      2:
+        gold: 5000
+        diamond: 50
+        territory_income: 25
+      3:
+        gold: 10000
+        diamond: 100
+        territory_income: 50
+    effects:
+      1:
+        tax_bonus:
+          type: PASSIVE_ABILITY
+          ability: TAX_BONUS
+          value: 0.10
+      2:
+        tax_bonus:
+          type: PASSIVE_ABILITY
+          ability: TAX_BONUS
+          value: 0.20
+      3:
+        economic_mastery:
+          type: SPECIAL_ABILITY
+          ability: ECONOMIC_MASTERY
+          value: 1.0
+
+  # 传奇科技（需要多个前置）
+  legendary_unity:
+    name: "国家统一"
+    description: "传奇科技：大幅提升所有国民的综合能力"
+    icon: NETHER_STAR
+    max_level: 1
+    category: "legendary"
+    enabled: true
+    prerequisites: ["farming_advanced", "military_advanced", "economy_advanced"]
+    costs:
+      1:
+        gold: 20000
+        diamond: 200
+        territory_income: 100
+    effects:
+      1:
+        unity_blessing:
+          type: SPECIAL_ABILITY
+          ability: UNITY_BLESSING
+          value: 1.0

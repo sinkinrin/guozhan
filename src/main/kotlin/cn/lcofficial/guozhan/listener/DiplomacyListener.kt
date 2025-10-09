@@ -37,8 +37,10 @@ class DiplomacyListener : Listener {
         val user = player.user()
         val country = user.country ?: return
         
-        // 延迟2秒发送外交信息，确保玩家已完全加载
-        Bukkit.getScheduler().runTaskLater(Guozhan.instance, Runnable {
+        // 延迟2秒发送外交信息，确保玩家已完全加载（Folia兼容）
+        val server = Bukkit.getServer()
+        val globalScheduler = server.globalRegionScheduler
+        globalScheduler.runDelayed(Guozhan.instance, {
             if (player.isOnline) {
                 sendDiplomacyStatus(player, country)
             }

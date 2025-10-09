@@ -5,8 +5,8 @@ import cn.lcofficial.guozhan.data.ResourceType
 import cn.lcofficial.guozhan.manager.CountryManager
 import cn.lcofficial.guozhan.manager.EconomyManager
 import cn.lcofficial.guozhan.manager.TerritoryManager
+import cn.lcofficial.guozhan.util.runRepeat
 import org.bukkit.Bukkit
-import org.bukkit.scheduler.BukkitRunnable
 
 /**
  * 经济系统相关的定时任务
@@ -27,29 +27,36 @@ object EconomyTasks {
     
     /**
      * 启动所有经济相关的定时任务
+     * 使用Folia的GlobalRegionScheduler进行全局定时任务
      */
     fun startTasks() {
         val plugin = Guozhan.instance
-        
-        // 启动自动收税任务
-        object : BukkitRunnable() {
-            override fun run() {
+
+        // 启动自动收税任务 - 使用Folia调度器
+        runRepeat(AUTO_TAX_INTERVAL.toLong(), AUTO_TAX_INTERVAL.toLong()) { task ->
+            try {
                 collectTaxes()
+            } catch (e: Exception) {
+                plugin.logger.severe("自动收税任务执行出错: ${e.message}")
+                e.printStackTrace()
             }
-        }.runTaskTimer(plugin, AUTO_TAX_INTERVAL.toLong(), AUTO_TAX_INTERVAL.toLong())
-        
+        }
+
         // 启动区域税收任务
         taxCollectionTask = TaxCollectionTask()
         taxCollectionTask.start()
-        
-        // 启动资源生成任务
-        object : BukkitRunnable() {
-            override fun run() {
+
+        // 启动资源生成任务 - 使用Folia调度器
+        runRepeat(RESOURCE_GENERATION_INTERVAL.toLong(), RESOURCE_GENERATION_INTERVAL.toLong()) { task ->
+            try {
                 generateResources()
+            } catch (e: Exception) {
+                plugin.logger.severe("资源生成任务执行出错: ${e.message}")
+                e.printStackTrace()
             }
-        }.runTaskTimer(plugin, RESOURCE_GENERATION_INTERVAL.toLong(), RESOURCE_GENERATION_INTERVAL.toLong())
-        
-        plugin.logger.info("经济系统定时任务已启动")
+        }
+
+        plugin.logger.info("经济系统定时任务已启动 (Folia GlobalRegionScheduler)")
     }
     
     /**

@@ -18,26 +18,20 @@ import kotlin.math.max
 class EconomyListener : Listener {
     
     companion object {
-        // 领土忠诚度降低的间隔（ticks）
-        private const val LOYALTY_DECAY_INTERVAL = 20 * 60 * 60 // 1小时
-        
-        // 每次降低的忠诚度
-        private const val LOYALTY_DECAY_AMOUNT = 5
+        // 注意：忠诚度系统已统一到LoyaltySystem.kt中
+        // 此处不再处理忠诚度衰减逻辑
     }
     
     /**
-     * 注册监听器和定时任务
+     * 注册监听器
+     * 注意：忠诚度定时任务已移至LoyaltySystem.kt统一管理
      */
     fun register() {
         val plugin = Guozhan.instance
         Bukkit.getPluginManager().registerEvents(this, plugin)
-        
-        // 启动领土忠诚度降低的定时任务
-        object : BukkitRunnable() {
-            override fun run() {
-                decreaseLoyalty()
-            }
-        }.runTaskTimer(plugin, LOYALTY_DECAY_INTERVAL.toLong(), LOYALTY_DECAY_INTERVAL.toLong())
+
+        // 忠诚度系统已统一到LoyaltySystem.kt中，此处不再启动重复的定时任务
+        plugin.logger.info("经济监听器已注册（忠诚度系统已统一管理）")
     }
     
     /**
@@ -81,26 +75,7 @@ class EconomyListener : Listener {
         // 可以在这里添加玩家退出时的经济相关处理
     }
     
-    /**
-     * 降低所有领土的忠诚度
-     */
-    private fun decreaseLoyalty() {
-        // 获取所有领土
-        val allTerritories = TerritoryManager.territories.values.toList()
-        
-        var decreasedCount = 0
-        for (territory in allTerritories) {
-            // 只处理有所有者的领土
-            if (territory.isOwned() && territory.loyalty > 0) {
-                territory.loyalty = max(0, territory.loyalty - LOYALTY_DECAY_AMOUNT)
-                territory.save()
-                decreasedCount++
-            }
-        }
-        
-        // 记录日志
-        if (decreasedCount > 0) {
-            Guozhan.instance.logger.info("已降低${decreasedCount}块领土的忠诚度")
-        }
-    }
+    // 注意：decreaseLoyalty()方法已移除
+    // 忠诚度系统已统一到LoyaltySystem.kt中管理
+    // 如需手动触发忠诚度更新，请使用LoyaltySystem类
 }

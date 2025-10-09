@@ -18,34 +18,68 @@ GuoZhan aims to be the most comprehensive and immersive nation-building plugin f
 
 ### Short-term Goals (Q1 2025)
 
-#### 🔥 v1.1.0 - Core Experience Enhancement
-**Target Release**: January 2025  
-**Focus**: Essential gameplay features and user experience improvements
+#### ✅ v1.2.0 - Territory Map System (COMPLETED)
+**Release Date**: 2025-10-05
+**Status**: ✅ 完成并发布
+**Focus**: 疆域可视化和地图系统
 
-##### New Features
-- **随机出生系统** `[HIGH PRIORITY]`
+##### Completed Features
+- ✅ **15x15疆域小地图系统** `[COMPLETED]`
+  - 实时显示周围15x15区块的领土状况
+  - 混合渲染技术：BufferedImage基础层 + setPixel动态层
+  - 颜色编码：灰色(未占领)、绿色(我方)、红色(敌方)、蓝色(友好)、黄色(中立)
+  - 玩家位置实时标记：白色闪烁十字标记
+  - 忠诚度可视化：颜色深浅表示忠诚度高低
+  - 接壤面数显示：边框样式表示接壤情况
+  - **技术实现**: TerritoryMapUtil工具类 + TerritoryMapRenderer
+  - **实际工作量**: 8天
+  - **测试覆盖**: 31个测试100%通过
+
+- ✅ **随机出生系统** `[COMPLETED in v1.1.0]`
   - 新玩家自动传送到15000格范围内无国家区域
   - 避免海洋出生，确保陆地安全出生点
   - 出生点缓存机制，提升性能
-  - **技术方案**: 使用异步区块检查，预生成安全出生点列表
-  - **工作量**: 3-5天
-  - **依赖**: 无
+  - **技术实现**: RandomSpawnManager + RandomSpawnListener
+  - **实际工作量**: 5天
+  - **状态**: 功能完整，存在少量技术债务
 
-- **疆域小地图系统** `[HIGH PRIORITY]`
-  - 15x15区块实时地图显示
-  - 显示国家势力、税收区域、资源分布
-  - 可交互的地图界面，支持缩放和导航
-  - **技术方案**: 使用MapView API + 自定义渲染器
-  - **工作量**: 7-10天  
-  - **依赖**: 无
+#### 🔥 v1.3.0 - Advanced Territory Management
+**Target Release**: November 2025
+**Focus**: 领土管理和占领机制完善
 
-- **BossBar核心血量显示** `[MEDIUM PRIORITY]`
+##### New Features
+- **BossBar核心血量显示增强** `[HIGH PRIORITY]`
   - 攻击核心时显示血量进度条
   - 双方国家成员实时查看
   - 自定义样式和颜色
   - **技术方案**: BossBar API + 事件监听
   - **工作量**: 2-3天
   - **依赖**: 核心攻击系统
+
+- **占领模式系统** `[HIGH PRIORITY]`
+  - 手动/自动模式切换：/u claimmode
+  - 手动模式：木斧右键占领机制
+  - 占领进度显示和取消机制
+  - **技术方案**: 自定义事件系统 + 进度条显示
+  - **工作量**: 5-7天
+  - **依赖**: 领土系统
+
+- **传送系统完善** `[MEDIUM PRIORITY]`
+  - 回城传送：/u return (10秒等待，不能移动)
+  - 受攻击打断传送机制
+  - 传送冷却时间和费用
+  - **技术方案**: 异步任务调度 + 事件监听
+  - **工作量**: 3-4天
+  - **依赖**: 国家管理系统
+
+- **更多管理命令** `[MEDIUM PRIORITY]`
+  - /u move - 迁移王城 (12小时冷却，Y轴64-300限制)
+  - /u rename - 更改国家名称
+  - /u transfer - 禅让君主之位
+  - /u title - 册封国民头衔
+  - **技术方案**: 扩展现有命令系统
+  - **工作量**: 4-6天
+  - **依赖**: 权限系统
 
 ##### Improvements
 - **命令系统优化** - 改进Tab补全和错误提示
@@ -57,38 +91,6 @@ GuoZhan aims to be the most comprehensive and immersive nation-building plugin f
 - 解决长时间运行的内存泄漏
 - 修复Squaremap集成的同步延迟
 
----
-
-#### ⚡ v1.2.0 - Advanced Territory Management  
-**Target Release**: February 2025  
-**Focus**: 领土管理和占领机制完善
-
-##### New Features
-- **占领模式系统** `[HIGH PRIORITY]`
-  - 手动/自动模式切换：/u claimmode
-  - 手动模式：木斧右键占领机制
-  - 占领进度显示和取消机制
-  - **技术方案**: 自定义事件系统 + 进度条显示
-  - **工作量**: 5-7天
-  - **依赖**: 领土系统
-
-- **传送系统完善** `[MEDIUM PRIORITY]`  
-  - 回城传送：/u return (10秒等待，不能移动)
-  - 受攻击打断传送机制
-  - 传送冷却时间和费用
-  - **技术方案**: 异步任务调度 + 事件监听
-  - **工作量**: 3-4天
-  - **依赖**: 国家管理系统
-
-- **更多管理命令** `[MEDIUM PRIORITY]`
-  - /u move - 迁移王城 (12小时冷却，Y轴64-300限制)
-  - /u rename - 更改国家名称
-  - /u transfer - 禅让君主之位  
-  - /u title - 册封国民头衔
-  - **技术方案**: 扩展现有命令系统
-  - **工作量**: 4-6天
-  - **依赖**: 权限系统
-
 ##### Improvements
 - **占领反馈** - 改进占领过程的视觉和音效反馈
 - **权限细化** - 更精细的权限控制和验证
@@ -98,8 +100,8 @@ GuoZhan aims to be the most comprehensive and immersive nation-building plugin f
 
 ### Medium-term Goals (Q2-Q3 2025)
 
-#### 🏗️ v1.3.0 - Technology & Strategy Systems
-**Target Release**: March 2025  
+#### 🏗️ v1.4.0 - Technology & Strategy Systems
+**Target Release**: December 2025
 **Focus**: 国家科技系统和策略深度
 
 ##### New Features
@@ -109,7 +111,6 @@ GuoZhan aims to be the most comprehensive and immersive nation-building plugin f
   - 科技研发消耗：领土收入或国民贡献
   - 科技等级和解锁条件
   - **技术方案**: GUI菜单系统 + 效果管理器
-  - **工作量**: 10-14天
   - **依赖**: 经济系统、职业系统
 
 - **忠诚度巡察系统** `[MEDIUM PRIORITY]`
@@ -342,5 +343,5 @@ GuoZhan aims to be the most comprehensive and immersive nation-building plugin f
 
 ---
 
-*最后更新: 2024年12月28日*
-*下次更新: 2025年1月15日*
+*最后更新: 2025年10月5日*
+*下次更新: 2025年11月1日*

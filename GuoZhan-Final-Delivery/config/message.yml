@@ -1,0 +1,89 @@
+# GuoZhan 插件消息配置文件
+# 支持 MiniMessage 格式和传统颜色代码
+
+# 基础消息
+prefix: "&8[&b国战&8] &r"
+reload: "&a配置文件已重载"
+no-permission: "&c你没有权限执行此命令"
+not-online: "&c玩家不在线"
+only-player: "&c此命令仅限玩家执行"
+
+# 命令相关消息
+commands:
+  create:
+    success: "&a成功创建国家！"
+    already: "&c你已经拥有一个国家了"
+    invalid-name: "&c国家名称不合法！名称长度必须在3-12个字符之间，只能包含中文、英文和数字"
+    name-used: "&c这个国家名称已经被使用了"
+    invalid-usage: "&c用法: /u create <国家名称>"
+    
+  info:
+    invalid-usage: "&c用法: /u info <国家名称>"
+    not-found: "&c找不到指定的国家"
+    
+  list:
+    page-info: "&7第 %page% 页，共 %total_page% 页"
+    
+  purge:
+    success: "&a成功清空数据库"
+    kick: "&c数据库已清空，请重新进入服务器"
+
+# 国家管理消息
+country:
+  created: "&a国家 &e%name% &a创建成功！"
+  disbanded: "&c国家 &e%name% &c已解散"
+  not-found: "&c国家不存在"
+  already-member: "&c你已经是这个国家的成员了"
+  
+# 领土管理消息
+territory:
+  claimed: "&a成功占领领土！"
+  unclaimed: "&a成功放弃领土"
+  cannot-claim: "&c无法占领此领土"
+  not-adjacent: "&c领土必须与你的国家现有领土接壤"
+  protected: "&c这块领土受到保护"
+  
+# 经济系统消息
+economy:
+  insufficient-funds: "&c资金不足"
+  tax-collected: "&a收取税收: &e%amount% &a金币"
+  tribute-success: "&a成功向国库贡献 &e%amount% &a%resource%"
+  
+# 外交系统消息
+diplomacy:
+  relation-changed: "&a与 &e%country% &a的关系已变更为 &e%relation%"
+  war-declared: "&c&l战争宣言！&r &e%country1% &c对 &e%country2% &c宣战！"
+  peace-established: "&a&l和平协议！&r &e%country1% &a与 &e%country2% &a建立和平关系"
+  
+# 科技系统消息
+technology:
+  research-started: "&a开始研究科技: &e%tech%"
+  research-completed: "&a科技研究完成: &e%tech%"
+  research-failed: "&c科技研究失败: %reason%"
+  insufficient-resources: "&c研究资源不足"
+  
+# 护盾系统消息
+shield:
+  activated: "&a护盾已激活，持续 &e%hours% &a小时"
+  deactivated: "&c护盾已关闭"
+  already-active: "&c护盾已经激活中"
+  cooldown: "&c护盾冷却中，剩余时间: &e%time%"
+  
+# 战争系统消息
+war:
+  started: "&c&l王战开始！&r 所有国家进入战争状态"
+  ended: "&a&l王战结束！&r 战争状态解除"
+  kill-reward: "&6战争击杀奖励: &e%amount% &6经济点数"
+  
+# 错误消息
+errors:
+  database-error: "&c数据库错误，请联系管理员"
+  internal-error: "&c内部错误，请稍后重试"
+  invalid-input: "&c输入无效，请检查参数"
+  permission-denied: "&c权限不足"
+  
+# 成功消息
+success:
+  operation-completed: "&a操作完成"
+  data-saved: "&a数据已保存"
+  settings-updated: "&a设置已更新"

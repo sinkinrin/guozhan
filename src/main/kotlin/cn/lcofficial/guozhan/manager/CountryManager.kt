@@ -4,44 +4,66 @@ import cn.lcofficial.guozhan.data.Cities
 import cn.lcofficial.guozhan.data.City
 import cn.lcofficial.guozhan.data.Countries
 import cn.lcofficial.guozhan.data.Country
+import cn.lcofficial.guozhan.data.ResourceType
+import cn.lcofficial.guozhan.data.TerritoryBlock
+import cn.lcofficial.guozhan.data.TerritoryBlocks
+import cn.lcofficial.guozhan.data.Users
 import cn.lcofficial.guozhan.manager.UserManager.user
+import cn.lcofficial.guozhan.pluginLogger
 import org.bukkit.entity.Player
+import org.jetbrains.exposed.dao.id.EntityID
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
 import java.util.*
+import java.util.concurrent.ConcurrentHashMap
 
 object CountryManager {
-    val countries = mutableMapOf<UUID, Country>()
+    val countries = ConcurrentHashMap<UUID, Country>()
     fun getCountry(uniqueId: UUID): Country? = transaction {
         var country = countries[uniqueId]
         if (country == null) {
-            country = Countries.selectAll().where { Countries.id eq uniqueId.toString() }.firstOrNull()?.let {
-                Country(
-                    UUID.fromString(it[Countries.id].value),
-                    UUID.fromString(it[Countries.owner].value),
-                    it[Countries.name],
-                    it[Countries.createTime],
-                    it[Countries.public],
-                    it[Countries.shield],
-                    it[Countries.gold],
-                    it[Countries.diamond],
-                    it[Countries.economyPoints],
-                    UUID.fromString(it[Countries.capital].value),
-                    it[Countries.coreHealth],
-                    it[Countries.coreLocationX],
-                    it[Countries.coreLocationY],
-                    it[Countries.coreLocationZ],
-                    it[Countries.coreWorld],
-                    it[Countries.lastHealthRegenTime]
-                )
+            country = Countries.selectAll().where { Countries.id eq uniqueId.toString() }.firstOrNull()?.let { row ->
+                try {
+                    Country(
+                        UUID.fromString(row[Countries.id].value),
+                        UUID.fromString(row[Countries.owner].value),
+                        row[Countries.name],
+                        row[Countries.createTime],
+                        row[Countries.public],
+                        row[Countries.shield],
+                        row[Countries.gold],
+                        row[Countries.diamond],
+                        row[Countries.economyPoints],
+                        UUID.fromString(row[Countries.capital].value),
+                        row[Countries.shieldEndTime],
+                        row[Countries.shieldCooldownEnd],
+                        row[Countries.coreHealth],
+                        row[Countries.coreLocationX],
+                        row[Countries.coreLocationY],
+                        row[Countries.coreLocationZ],
+                        row[Countries.coreWorld],
+                        row[Countries.lastHealthRegenTime]
+                    )
+                } catch (e: IllegalArgumentException) {
+                    pluginLogger.warning("[CountryManager] 跳过无效的UUID数据: 国家ID='${row[Countries.id].value}', 所有者ID='${row[Countries.owner].value}', 首都ID='${row[Countries.capital].value}' - ${e.message}")
+                    null
+                }
             }
             if (country != null) {
                 countries[uniqueId] = country
                 Cities.select(
-                    Cities.owner
-                ).where { Cities.owner eq country.id.toString() }.forEach {
-                    country.cities.add(CityManager.getCity(UUID.fromString(it[Cities.id].value))!!)
+                    Cities.id, Cities.owner
+                ).where { Cities.owner eq country.id.toString() }.forEach { row ->
+                    try {
+                        val cityId = UUID.fromString(row[Cities.id].value)
+                        val city = CityManager.getCity(cityId)
+                        if (city != null) {
+                            country.cities.add(city)
+                        }
+                    } catch (e: IllegalArgumentException) {
+                        pluginLogger.warning("[CountryManager] 跳过无效的城市UUID: '${row[Cities.id].value}' - ${e.message}")
+                    }
                 }
             }
         }
@@ -53,8 +75,13 @@ object CountryManager {
         if (country == null) {
             country =
                 Countries.select(listOf(Countries.id, Countries.name)).where { Countries.name eq name }.firstOrNull()
-                    ?.let {
-                        getCountry(UUID.fromString(it[Countries.id].value))
+                    ?.let { row ->
+                        try {
+                            getCountry(UUID.fromString(row[Countries.id].value))
+                        } catch (e: IllegalArgumentException) {
+                            pluginLogger.warning("[CountryManager] 跳过无效的国家UUID: '${row[Countries.id].value}' - ${e.message}")
+                            null
+                        }
                     }
         }
         country
@@ -93,9 +120,9 @@ object CountryManager {
 
         Countries.insert {
             it[Countries.id] = country.id.toString()
-            it[Countries.owner] = user.uniqueId.toString()
+            it[Countries.owner] = EntityID(user.uniqueId.toString(), Users)
             it[Countries.name] = country.name
-            it[Countries.capital] = country.capitalId.toString()
+            it[Countries.capital] = EntityID(country.capitalId.toString(), Cities)
             it[Countries.createTime] = country.createTime
             it[Countries.public] = country.public
             it[Countries.shield] = country.shield
@@ -109,13 +136,79 @@ object CountryManager {
             it[Countries.coreWorld] = country.coreWorld
             it[Countries.lastHealthRegenTime] = country.lastHealthRegenTime
         }
-        
+
         // 创建国家核心
         country.createCore(player.location)
-        
+
+        // 🔧 v1.3.16: 修复核心领地未写入数据库的Bug - 创建3x3核心领地块
+        val centerX = city.x
+        val centerZ = city.z
+        val worldName = player.location.world?.name ?: "world"
+
+        // 创建3x3核心领地区域 - 直接在当前事务中创建，避免嵌套事务
+        var coreBlocksCreated = 0
+        for (dx in -1..1) {
+            for (dz in -1..1) {
+                val blockX = centerX + dx
+                val blockZ = centerZ + dz
+                try {
+                    // 🔧 v1.3.19: 修复首都标记和核心血量初始化Bug
+                    // 只有中心区块(0,0)应该被标记为首都，周围8个区块为普通领土
+                    val isCenterBlock = (dx == 0 && dz == 0)
+
+                    // 直接创建TerritoryBlock而不调用TerritoryManager的事务方法
+                    val territoryBlock = TerritoryBlock(
+                        id = UUID.randomUUID(),
+                        x = blockX,
+                        z = blockZ,
+                        world = worldName,
+                        loyalty = 100,
+                        ownerId = country.id, // 需要提供ownerId参数
+                        resourceType = ResourceType.NONE,
+                        resourceAmount = 0,
+                        lastHarvestTime = 0L,
+                        lastLoyaltyUpdateTime = System.currentTimeMillis(),
+                        isCapital = isCenterBlock, // 只有中心区块是首都
+                        coreHealth = if (isCenterBlock) 1000 else 0, // 首都区块初始血量1000，其他为0
+                        lastCoreHealthUpdateTime = System.currentTimeMillis()
+                    )
+
+                    // 直接插入数据库，避免嵌套事务
+                    TerritoryBlocks.insert {
+                        it[TerritoryBlocks.id] = territoryBlock.id.toString()
+                        it[TerritoryBlocks.x] = territoryBlock.x
+                        it[TerritoryBlocks.z] = territoryBlock.z
+                        it[TerritoryBlocks.world] = territoryBlock.world
+                        it[TerritoryBlocks.loyalty] = territoryBlock.loyalty
+                        it[TerritoryBlocks.owner] = EntityID(country.id.toString(), Countries)
+                        it[TerritoryBlocks.resourceType] = territoryBlock.resourceType
+                        it[TerritoryBlocks.resourceAmount] = territoryBlock.resourceAmount
+                        it[TerritoryBlocks.lastHarvestTime] = territoryBlock.lastHarvestTime
+                        it[TerritoryBlocks.lastLoyaltyUpdateTime] = territoryBlock.lastLoyaltyUpdateTime
+                        it[TerritoryBlocks.isCapital] = territoryBlock.isCapital
+                        it[TerritoryBlocks.coreHealth] = territoryBlock.coreHealth
+                        it[TerritoryBlocks.lastCoreHealthUpdateTime] = territoryBlock.lastCoreHealthUpdateTime
+                    }
+                    coreBlocksCreated++
+                    val blockType = if (isCenterBlock) "首都核心" else "周围领土"
+                    pluginLogger.info("[核心领地] 创建${blockType}块 (${blockX}, ${blockZ}) 属于国家 ${country.name}，血量: ${territoryBlock.coreHealth}")
+                } catch (e: Exception) {
+                    pluginLogger.warning("[核心领地] 创建核心领地块 (${blockX}, ${blockZ}) 失败: ${e.message}")
+                }
+            }
+        }
+        pluginLogger.info("[核心领地] 国家 ${country.name} 的3x3核心领地已写入数据库，中心坐标 (${centerX}, ${centerZ})，成功创建 ${coreBlocksCreated} 个领地块，其中1个首都核心块")
+
+        // 设置创建者为君主
+        user.rank = cn.lcofficial.guozhan.data.Rank.OWNER
         user.country = country
         user.save()
-        
+
+        // 🔧 v1.3.15: 修复王城所有权问题 - 设置城市所有者
+        city.owner = country
+        city.save()
+        pluginLogger.info("[王城所有权] 国家 ${country.name} 的王城所有权已设置到坐标 (${city.x}, ${city.z})")
+
         // 添加到缓存
         countries[country.id] = country
 
@@ -135,6 +228,8 @@ object CountryManager {
                 it[Countries.diamond],
                 it[Countries.economyPoints],
                 UUID.fromString(it[Countries.capital].value),
+                it[Countries.shieldEndTime],
+                it[Countries.shieldCooldownEnd],
                 it[Countries.coreHealth],
                 it[Countries.coreLocationX],
                 it[Countries.coreLocationY],
@@ -146,7 +241,8 @@ object CountryManager {
     }
 
     fun totalPages(pageSize: Int): Long = transaction {
-        (Countries.selectAll().count() / pageSize) + 1
+        val count = Countries.selectAll().count()
+        if (count == 0L) 0L else (count + pageSize - 1) / pageSize // 向上取整
     }
 
 }

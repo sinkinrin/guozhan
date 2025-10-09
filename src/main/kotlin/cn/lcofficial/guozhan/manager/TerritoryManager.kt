@@ -203,15 +203,19 @@ object TerritoryManager {
      * @param territory 要检查的区块
      * @param country 尝试占领的国家
      * @return 是否可以占领
+     * v1.3.13修复：检查防御者（领土所有者）的护盾，而不是攻击者的护盾
      */
     fun canClaim(territory: TerritoryBlock, country: Country): Boolean {
-        // 如果国家开启了护盾，不能占领新区块
-        if (country.shield) return false
-        
+        // v1.3.13修复：如果领土所有者开启了护盾，不能被占领
+        val defender = territory.owner
+        if (defender != null && cn.lcofficial.guozhan.manager.ShieldManager.isShieldActive(defender)) {
+            return false
+        }
+
         // 检查是否与现有领土接壤
         val adjacentToOwn = hasAdjacentTerritory(territory, country)
         if (!adjacentToOwn) return false
-        
+
         return true
     }
     

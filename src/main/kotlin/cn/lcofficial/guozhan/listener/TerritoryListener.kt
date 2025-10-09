@@ -2,16 +2,24 @@ package cn.lcofficial.guozhan.listener
 
 import cn.lcofficial.guozhan.Guozhan
 import cn.lcofficial.guozhan.config.Message
+import cn.lcofficial.guozhan.config.Message.sendError
+import cn.lcofficial.guozhan.config.Message.sendSuccess
+import cn.lcofficial.guozhan.config.Message.sendInfo
+import cn.lcofficial.guozhan.data.ClaimMode
 import cn.lcofficial.guozhan.data.Rank
+import cn.lcofficial.guozhan.data.ResourceType
 import cn.lcofficial.guozhan.manager.TerritoryManager
 import cn.lcofficial.guozhan.manager.TerritoryManager.territoryBlock
 import cn.lcofficial.guozhan.manager.UserManager.user
+import cn.lcofficial.guozhan.util.hasEnoughItem
+import cn.lcofficial.guozhan.util.takeItem
 // 移除不存在的Scheduler导入，使用Folia调度器
 import org.bukkit.Material
 import org.bukkit.entity.Player
 import org.bukkit.event.EventHandler
 import org.bukkit.event.EventPriority
 import org.bukkit.event.Listener
+import org.bukkit.event.block.Action
 import org.bukkit.event.block.BlockBreakEvent
 import org.bukkit.event.block.BlockPlaceEvent
 import org.bukkit.event.player.PlayerInteractEvent
@@ -137,6 +145,92 @@ object TerritoryListener : Listener {
             notifyPlayerIfNeeded(player, "§c这块领土的忠诚度太低，只有管理员或国家所有者才能使用容器！")
             return
         }
+    }
+
+    /**
+     * 手动占领监听器 - 处理木斧右键占领
+     */
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    fun onManualClaim(event: PlayerInteractEvent) {
+        // 只处理右键点击方块
+        if (event.action != Action.RIGHT_CLICK_BLOCK) return
+
+        val player = event.player
+        val user = player.user()
+        val clickedBlock = event.clickedBlock ?: return
+
+        // 检查是否为手动模式
+        if (user.claimMode != ClaimMode.MANUAL) return
+
+        // 检查是否手持木斧
+        if (player.inventory.itemInMainHand.type != Material.WOODEN_AXE) return
+
+        // 检查玩家是否属于国家
+        if (user.country == null) {
+            player.sendError("你不属于任何国家，无法占领领土！")
+            return
+        }
+
+        // 检查权限
+        if (user.rank == Rank.DEFAULT) {
+            player.sendError("只有国家管理员或所有者才能占领领土！")
+            return
+        }
+
+        // 取消事件，防止其他交互
+        event.isCancelled = true
+
+        // 获取点击的区块
+        val chunkX = clickedBlock.chunk.x
+        val chunkZ = clickedBlock.chunk.z
+        val worldName = clickedBlock.world.name
+
+        // 获取或创建领土区块
+        val territory = TerritoryManager.getTerritoryBlock(chunkX, chunkZ, worldName)
+            ?: TerritoryManager.createTerritoryBlock(chunkX, chunkZ, worldName)
+
+        // 检查是否已被占领
+        if (territory.isOwned()) {
+            if (territory.owner?.id == user.country?.id) {
+                player.sendError("这块领土已经属于你的国家了！")
+            } else {
+                player.sendError("这块领土已经被其他国家占领了！")
+                player.sendInfo("你可以尝试攻击占领，但需要更长时间")
+            }
+            return
+        }
+
+        // 检查是否与现有领土接壤
+        if (!TerritoryManager.canClaim(territory, user.country!!)) {
+            player.sendError("占领失败！领土必须与你的国家现有领土接壤")
+            return
+        }
+
+        // 检查资源消耗（3个铁锭）
+        if (!player.hasEnoughItem(Material.IRON_INGOT, 3)) {
+            player.sendError("占领领土需要3个铁锭！")
+            return
+        }
+
+        // 扣除资源
+        player.takeItem(Material.IRON_INGOT, 3)
+
+        // 执行占领
+        territory.owner = user.country
+        territory.loyalty = 100
+        territory.save()
+
+        // 随机生成资源
+        TerritoryManager.generateRandomResource(territory)
+
+        // 发送成功消息
+        player.sendSuccess("成功占领了这块领土！")
+        if (territory.resourceType != ResourceType.NONE) {
+            player.sendInfo("这块领土上发现了${territory.resourceType}资源！")
+        }
+
+        player.sendInfo("继续手持木斧右键其他区块来占领更多领土")
+        player.sendInfo("使用 /u claimmode 可以切换回自动模式")
     }
 
     private fun notifyPlayerIfNeeded(player: Player, message: String) {

@@ -6,13 +6,13 @@ import org.bukkit.Bukkit
 import org.bukkit.Material
 import org.bukkit.Particle
 import org.bukkit.block.Chest
-import org.bukkit.scheduler.BukkitRunnable
+import io.papermc.paper.threadedregions.scheduler.ScheduledTask
 import java.time.DayOfWeek
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.util.*
 
-class WarEventScheduler : BukkitRunnable() {
+class WarEventScheduler {
     private var isWarActive = false
     private var warStartTime: LocalDateTime? = null
     private val warScores = mutableMapOf<UUID, Int>()
@@ -27,28 +27,36 @@ class WarEventScheduler : BukkitRunnable() {
         const val WAR_END_MINUTE = 0
     }
     
-    override fun run() {
+    fun run() {
         val now = LocalDateTime.now()
-        
+
         if (!isWarActive && shouldStartWar(now)) {
             startWar()
         } else if (isWarActive && shouldEndWar(now)) {
             endWar()
         }
-        
+
         if (isWarActive && now.toLocalTime().isAfter(LocalTime.of(WAR_START_HOUR, WAR_START_MINUTE))) {
             updateWarScores()
         }
     }
     
     private fun shouldStartWar(now: LocalDateTime): Boolean {
-        return now.dayOfWeek == DayOfWeek.of(WAR_DAY) && 
-               now.toLocalTime() == LocalTime.of(PREPARE_HOUR, PREPARE_MINUTE)
+        val currentTime = now.toLocalTime()
+        val startTime = LocalTime.of(PREPARE_HOUR, PREPARE_MINUTE)
+        val endTime = startTime.plusMinutes(1) // 1分钟的时间窗口
+
+        return now.dayOfWeek == DayOfWeek.of(WAR_DAY) &&
+               !currentTime.isBefore(startTime) && currentTime.isBefore(endTime)
     }
-    
+
     private fun shouldEndWar(now: LocalDateTime): Boolean {
-        return now.dayOfWeek == DayOfWeek.of(WAR_DAY) && 
-               now.toLocalTime() == LocalTime.of(WAR_END_HOUR, WAR_END_MINUTE)
+        val currentTime = now.toLocalTime()
+        val endTime = LocalTime.of(WAR_END_HOUR, WAR_END_MINUTE)
+        val windowEnd = endTime.plusMinutes(1) // 1分钟的时间窗口
+
+        return now.dayOfWeek == DayOfWeek.of(WAR_DAY) &&
+               !currentTime.isBefore(endTime) && currentTime.isBefore(windowEnd)
     }
     
     private fun startWar() {

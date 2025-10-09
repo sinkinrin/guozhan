@@ -47,6 +47,15 @@ bin/
 *.sqlite
 *.sqlite3
 
+# Local tooling and caches
+.augment/
+.joycode/
+.kotlin/
+
+# Local server / runtime environments
+test-server/
+folia-*.jar
+
 # Log files
 logs/
 *.log

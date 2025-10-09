@@ -2,6 +2,7 @@ package cn.lcofficial.guozhan.economy
 
 import cn.lcofficial.guozhan.Guozhan
 import cn.lcofficial.guozhan.config.DiplomacyConfig
+import cn.lcofficial.guozhan.data.Countries
 import cn.lcofficial.guozhan.data.Country
 import cn.lcofficial.guozhan.data.ResourceType
 import cn.lcofficial.guozhan.manager.CountryManager
@@ -10,6 +11,8 @@ import cn.lcofficial.guozhan.manager.TerritoryManager
 import cn.lcofficial.guozhan.manager.UserManager.user
 import org.bukkit.Bukkit
 import org.bukkit.entity.Player
+import org.jetbrains.exposed.sql.selectAll
+import org.jetbrains.exposed.sql.transactions.transaction
 import java.util.*
 
 /**
@@ -284,8 +287,12 @@ object TaxSystem {
         
         var totalCollected = 0
         
-        // 获取所有国家
-        val countries = CountryManager.countries.values.toList()
+        // v1.3.13修复：从数据库查询所有国家，而不是依赖缓存
+        val countries = transaction {
+            Countries.selectAll().map { row ->
+                CountryManager.getCountry(UUID.fromString(row[Countries.id].value))
+            }.filterNotNull()
+        }
         
         for (country in countries) {
             // 跳过税率为0的国家

@@ -10,7 +10,7 @@ import org.bukkit.entity.Player
 /**
  * 全球聊天命令 (/c)
  */
-class GlobalChatCommand : CommandExecutor {
+class GlobalChatCommand : CommandExecutor, TabCompleter {
     
     override fun onCommand(sender: CommandSender, command: Command, label: String, args: Array<out String>): Boolean {
         if (sender !is Player) {
@@ -27,6 +27,16 @@ class GlobalChatCommand : CommandExecutor {
         ChatManager.handleGlobalChat(sender, message)
         
         return true
+    }
+
+    override fun onTabComplete(
+        sender: CommandSender,
+        command: Command,
+        label: String,
+        args: Array<out String>
+    ): List<String> {
+        // /c 命令不需要 tab 补全，因为是自由输入消息内容
+        return emptyList()
     }
 }
 

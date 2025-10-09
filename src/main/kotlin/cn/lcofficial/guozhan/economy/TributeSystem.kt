@@ -12,17 +12,24 @@ import org.bukkit.command.CommandSender
 import org.bukkit.entity.Player
 import org.bukkit.inventory.ItemStack
 import java.util.*
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * 资源上贡系统，处理高级上贡功能和国家间的资源贡献
  */
 object TributeSystem {
-    
+
     // 记录国家间的贡献关系
     private val tributeRelations = mutableMapOf<String, TributeRelation>()
-    
+
     // 记录每个国家的贡献历史
     private val tributeHistory = mutableMapOf<UUID, MutableList<TributeRecord>>()
+
+    // 玩家贡献冷却时间记录 (UUID -> 上次贡献时间戳)
+    private val playerTributeCooldowns = ConcurrentHashMap<UUID, Long>()
+
+    // 贡献冷却时间：24小时 (毫秒)
+    private const val TRIBUTE_COOLDOWN_TIME = 24 * 60 * 60 * 1000L
     
     /**
      * 初始化上贡系统
@@ -31,8 +38,12 @@ object TributeSystem {
         Guozhan.instance.logger.info("正在初始化资源上贡系统...")
         loadTributeRelations()
         
-        // 设置定时任务，每小时处理一次自动贡献
-        Bukkit.getScheduler().runTaskTimerAsynchronously(Guozhan.instance, Runnable {
+        // 设置定时任务，每小时处理一次自动贡献 - 使用Folia异步调度器
+        cn.lcofficial.guozhan.util.asyncRepeat(
+            delay = 20 * 60 * 10 * 50L, // 10分钟后开始 (转换为毫秒)
+            period = 20 * 60 * 60 * 50L, // 每小时执行一次 (转换为毫秒)
+            timeUnit = java.util.concurrent.TimeUnit.MILLISECONDS
+        ) { _ ->
             try {
                 val processedCount = processAutomaticTributes()
                 Guozhan.instance.logger.info("自动贡献定时任务完成，处理了${processedCount}个贡献关系")
@@ -40,7 +51,7 @@ object TributeSystem {
                 Guozhan.instance.logger.severe("自动贡献定时任务出错: ${e.message}")
                 e.printStackTrace()
             }
-        }, 20 * 60 * 10, 20 * 60 * 60) // 10分钟后开始，每小时执行一次
+        }
     }
     
     /**
@@ -131,10 +142,22 @@ object TributeSystem {
     fun tributeResource(player: Player, targetCountry: Country, material: Material, amount: Int): Boolean {
         val user = player.user()
         val sourceCountry = user.country ?: return false
-        
+
         // 不能向自己的国家上贡
         if (sourceCountry.id == targetCountry.id) {
             player.sendMessage("§c你不能向自己的国家上贡！")
+            return false
+        }
+
+        // 检查24小时冷却时间
+        val playerId = player.uniqueId
+        val currentTime = System.currentTimeMillis()
+        val lastTributeTime = playerTributeCooldowns[playerId] ?: 0L
+
+        if (currentTime - lastTributeTime < TRIBUTE_COOLDOWN_TIME) {
+            val remainingTime = TRIBUTE_COOLDOWN_TIME - (currentTime - lastTributeTime)
+            val remainingTimeFormatted = formatRemainingTime(remainingTime)
+            player.sendMessage("§c你需要等待 §e${remainingTimeFormatted} §c后才能再次进行贡献！")
             return false
         }
         
@@ -168,7 +191,10 @@ object TributeSystem {
         
         // 记录贡献历史
         recordTribute(sourceCountry.id, targetCountry.id, material, amount, resourceValue)
-        
+
+        // 记录玩家贡献冷却时间
+        playerTributeCooldowns[playerId] = currentTime
+
         // 增加外交关系友好度，根据资源价值提供额外加成
         val relationBonus = when {
             resourceValue >= 100 -> 3 // 大量高价值资源提供额外友好度
@@ -360,6 +386,49 @@ object TributeSystem {
     fun getTributeHistory(country: Country): List<TributeRecord> {
         return tributeHistory[country.id] ?: emptyList()
     }
+
+    /**
+     * 格式化剩余冷却时间
+     * @param remainingTimeMs 剩余时间（毫秒）
+     * @return 格式化的时间字符串（如：23小时45分钟）
+     */
+    private fun formatRemainingTime(remainingTimeMs: Long): String {
+        val totalMinutes = remainingTimeMs / (60 * 1000)
+        val hours = totalMinutes / 60
+        val minutes = totalMinutes % 60
+
+        return when {
+            hours > 0 && minutes > 0 -> "${hours}小时${minutes}分钟"
+            hours > 0 -> "${hours}小时"
+            minutes > 0 -> "${minutes}分钟"
+            else -> "不到1分钟"
+        }
+    }
+
+    /**
+     * 检查玩家是否在冷却时间内
+     * @param player 玩家
+     * @return 是否在冷却时间内
+     */
+    fun isPlayerOnCooldown(player: Player): Boolean {
+        val playerId = player.uniqueId
+        val currentTime = System.currentTimeMillis()
+        val lastTributeTime = playerTributeCooldowns[playerId] ?: 0L
+        return currentTime - lastTributeTime < TRIBUTE_COOLDOWN_TIME
+    }
+
+    /**
+     * 获取玩家剩余冷却时间
+     * @param player 玩家
+     * @return 剩余冷却时间（毫秒），如果不在冷却中返回0
+     */
+    fun getPlayerRemainingCooldown(player: Player): Long {
+        val playerId = player.uniqueId
+        val currentTime = System.currentTimeMillis()
+        val lastTributeTime = playerTributeCooldowns[playerId] ?: 0L
+        val remainingTime = TRIBUTE_COOLDOWN_TIME - (currentTime - lastTributeTime)
+        return if (remainingTime > 0) remainingTime else 0L
+    }
     
     /**
      * 手动处理所有贡献关系
@@ -369,30 +438,30 @@ object TributeSystem {
     fun manualProcessTributes(sender: CommandSender) {
         sender.sendMessage("§e[国家贡献] §f正在处理所有贡献关系...")
         
-        // 使用异步任务处理贡献，避免卡服
-        Bukkit.getScheduler().runTaskAsynchronously(Guozhan.instance, Runnable {
+        // 使用异步任务处理贡献，避免卡服 - 使用Folia异步调度器
+        cn.lcofficial.guozhan.util.async { _ ->
             try {
                 val startTime = System.currentTimeMillis()
                 val processedCount = processAutomaticTributes()
                 val endTime = System.currentTimeMillis()
-                
+
                 // 计算处理时间
                 val processingTime = (endTime - startTime) / 1000.0
-                
-                // 通知结果
-                Bukkit.getScheduler().runTask(Guozhan.instance, Runnable {
+
+                // 通知结果 - 使用Folia主线程调度器
+                cn.lcofficial.guozhan.util.run { _ ->
                     sender.sendMessage("§e[国家贡献] §f处理完成！共处理了 §6${processedCount} §f个贡献关系，耗时 §6${processingTime} §f秒")
-                })
+                }
             } catch (e: Exception) {
                 Guozhan.instance.logger.severe("手动处理贡献关系出错: ${e.message}")
                 e.printStackTrace()
-                
-                // 通知错误
-                Bukkit.getScheduler().runTask(Guozhan.instance, Runnable {
+
+                // 通知错误 - 使用Folia主线程调度器
+                cn.lcofficial.guozhan.util.run { _ ->
                     sender.sendMessage("§c[国家贡献] §f处理过程中出现错误: §c${e.message}")
-                })
+                }
             }
-        })
+        }
     }
     
     /**

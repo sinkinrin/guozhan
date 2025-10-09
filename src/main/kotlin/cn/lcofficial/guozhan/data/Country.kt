@@ -7,6 +7,7 @@ import org.bukkit.Bukkit
 import org.bukkit.Material
 import org.bukkit.World
 import org.jetbrains.exposed.dao.id.IdTable
+import org.jetbrains.exposed.dao.id.EntityID
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.jetbrains.exposed.sql.update
 import java.util.*
@@ -22,6 +23,9 @@ object Countries : IdTable<String>("gz_countries") {
     val gold = integer("gold")
     val diamond = integer("diamond")
     val economyPoints = integer("economy_points").default(0) // 经济点数
+    // 护盾系统持久化字段
+    val shieldEndTime = long("shield_end_time").nullable() // 护盾结束时间戳
+    val shieldCooldownEnd = long("shield_cooldown_end").nullable() // 护盾冷却结束时间戳
     // 核心系统相关字段
     val coreHealth = integer("core_health").default(1000)
     val coreLocationX = integer("core_location_x")
@@ -42,6 +46,9 @@ class Country(
     var diamond: Int,
     var economyPoints: Int = 0, // 经济点数
     var capitalId: UUID,
+    // 护盾系统持久化属性
+    var shieldEndTime: Long? = null, // 护盾结束时间戳
+    var shieldCooldownEnd: Long? = null, // 护盾冷却结束时间戳
     // 核心系统相关属性
     var coreHealth: Int = 1000,
     var coreLocationX: Int = 0,
@@ -52,17 +59,17 @@ class Country(
 ) {
     var capital: City
         get() {
-            return CityManager.getCity(capitalId)!!
+            return CityManager.getCity(capitalId) ?: throw IllegalStateException("Capital city not found for country $name")
         }
         set(value) {
             capitalId = value.id
         }
-    var owner: User
+    var owner: User?
         get() {
-            return UserManager.getUser(ownerId)!!
+            return UserManager.getUser(ownerId)
         }
         set(value) {
-            ownerId = value.uniqueId
+            ownerId = value?.uniqueId ?: throw IllegalArgumentException("Owner cannot be null")
         }
     val cities = mutableListOf<City>()
     val members: List<User>
@@ -75,14 +82,16 @@ class Country(
     fun save() = transaction {
         Countries.update({ Countries.id eq id }) {
             it[name] = name
-            it[owner] = ownerId.toString()
-            it[capital] = capitalId.toString()
+            it[owner] = EntityID(ownerId.toString(), Users)
+            it[capital] = EntityID(capitalId.toString(), Cities)
             it[createTime] = createTime
             it[public] = public
             it[shield] = shield
             it[gold] = gold
             it[diamond] = diamond
             it[economyPoints] = economyPoints
+            it[shieldEndTime] = shieldEndTime
+            it[shieldCooldownEnd] = shieldCooldownEnd
             it[coreHealth] = coreHealth
             it[coreLocationX] = coreLocationX
             it[coreLocationY] = coreLocationY

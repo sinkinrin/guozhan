@@ -5,12 +5,15 @@ import cn.lcofficial.guozhan.config.Config
 import cn.lcofficial.guozhan.data.Country
 import cn.lcofficial.guozhan.data.RelationType
 import cn.lcofficial.guozhan.pluginLogger
+import cn.lcofficial.guozhan.util.runRepeat
+import cn.lcofficial.guozhan.util.async
+import cn.lcofficial.guozhan.util.run
 import org.bukkit.Bukkit
 import org.bukkit.boss.BarColor
 import org.bukkit.boss.BarStyle
 import org.bukkit.boss.BossBar
 import org.bukkit.entity.Player
-import org.bukkit.scheduler.BukkitTask
+import io.papermc.paper.threadedregions.scheduler.ScheduledTask
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 
@@ -46,7 +49,13 @@ object CoreManager {
     private val bossBarDisplayCache = ConcurrentHashMap<UUID, BossBarDisplayInfo>()
 
     // 核心血量回复任务
-    private var regenTask: BukkitTask? = null
+    private var regenTask: ScheduledTask? = null
+
+    // BossBar更新频率限制（避免过于频繁的更新）
+    private const val BOSSBAR_UPDATE_INTERVAL = 1000L // 1秒最多更新一次
+
+    // 上次BossBar更新时间
+    private val lastBossBarUpdateTime = ConcurrentHashMap<UUID, Long>()
     
     /**
      * 初始化核心管理器
@@ -58,17 +67,40 @@ object CoreManager {
     
     /**
      * 启动核心血量回复任务
+     * 使用Folia的GlobalRegionScheduler进行全局定时任务
      */
     private fun startHealthRegenTask() {
         regenTask?.cancel()
-        
+
         // 每分钟执行一次血量回复
-        regenTask = Bukkit.getScheduler().runTaskTimer(Guozhan.instance, Runnable {
-            CountryManager.countries.values.forEach { country ->
-                country.regenHealth()
-                updateBossBar(country)
+        // 使用Folia的GlobalRegionScheduler，适合全局性的定时任务
+        regenTask = runRepeat(20L * 60L, 20L * 60L) { task ->
+            try {
+                val startTime = System.currentTimeMillis()
+                var processedCountries = 0
+
+                CountryManager.countries.values.forEach { country ->
+                    country.regenHealth()
+                    updateBossBar(country)
+                    processedCountries++
+                }
+
+                val duration = System.currentTimeMillis() - startTime
+                if (duration > 100) { // 如果处理时间超过100ms，记录警告
+                    pluginLogger.warning("核心血量回复任务耗时较长: ${duration}ms，处理了${processedCountries}个国家")
+                }
+
+                pluginLogger.fine("核心血量回复任务完成: 处理${processedCountries}个国家，耗时${duration}ms")
+
+            } catch (e: Exception) {
+                pluginLogger.severe("核心血量回复任务执行出错: ${e.message}")
+                e.printStackTrace()
+                // 如果出现严重错误，取消任务
+                task.cancel()
             }
-        }, 20L * 60L, 20L * 60L) // 每60秒执行一次
+        }
+
+        pluginLogger.info("核心血量回复任务已启动 (Folia GlobalRegionScheduler)")
     }
     
     /**
@@ -171,6 +203,14 @@ object CoreManager {
             return
         }
 
+        // 频率限制：避免过于频繁的更新
+        val currentTime = System.currentTimeMillis()
+        val lastUpdate = lastBossBarUpdateTime[country.id] ?: 0L
+        if (currentTime - lastUpdate < BOSSBAR_UPDATE_INTERVAL) {
+            return // 跳过过于频繁的更新
+        }
+        lastBossBarUpdateTime[country.id] = currentTime
+
         // 检查是否应该显示 BossBar
         if (!shouldDisplayBossBar(country, attackerCountry)) {
             removeBossBar(country)
@@ -232,16 +272,19 @@ object CoreManager {
 
     /**
      * 异步更新BossBar的显示对象
+     * 使用Folia的AsyncScheduler进行异步处理
      */
     private fun updateBossBarPlayersAsync(country: Country, attackerCountry: Country?, bossBar: BossBar) {
-        Bukkit.getScheduler().runTaskAsynchronously(Guozhan.instance, Runnable {
+        // 使用Folia的AsyncScheduler进行异步处理
+        async { _ ->
             val displayPlayers = getDisplayPlayers(country, attackerCountry)
 
             // 回到主线程更新 BossBar
-            Bukkit.getScheduler().runTask(Guozhan.instance, Runnable {
+            // 使用GlobalRegionScheduler执行主线程任务
+            run { _ ->
                 updateBossBarSync(country, bossBar, displayPlayers)
-            })
-        })
+            }
+        }
     }
 
     /**
@@ -278,14 +321,38 @@ object CoreManager {
 
     /**
      * 同步更新BossBar显示
+     * 优化：只更新变化的玩家，避免不必要的removeAll()操作
      */
     private fun updateBossBarSync(country: Country, bossBar: BossBar, players: List<Player>) {
-        // 清除所有玩家
-        bossBar.removeAll()
+        val newPlayerIds = players.map { it.uniqueId }.toSet()
 
-        // 添加应该显示的玩家
-        players.forEach { player ->
-            bossBar.addPlayer(player)
+        // 获取当前显示的玩家
+        val cachedInfo = bossBarDisplayCache[country.id]
+        val currentPlayerIds = cachedInfo?.displayPlayers ?: emptySet()
+
+        // 计算需要添加和移除的玩家
+        val playersToAdd = newPlayerIds - currentPlayerIds
+        val playersToRemove = currentPlayerIds - newPlayerIds
+
+        // 只有在有变化时才进行更新
+        if (playersToAdd.isNotEmpty() || playersToRemove.isNotEmpty()) {
+            // 移除不再需要显示的玩家
+            playersToRemove.forEach { playerId ->
+                val player = Bukkit.getPlayer(playerId)
+                if (player != null) {
+                    bossBar.removePlayer(player)
+                }
+            }
+
+            // 添加新的玩家
+            playersToAdd.forEach { playerId ->
+                val player = Bukkit.getPlayer(playerId)
+                if (player != null && player.isOnline) {
+                    bossBar.addPlayer(player)
+                }
+            }
+
+            pluginLogger.fine("BossBar更新: 国家${country.name}, 添加${playersToAdd.size}个玩家, 移除${playersToRemove.size}个玩家")
         }
 
         // 更新缓存
@@ -293,7 +360,7 @@ object CoreManager {
             country = country,
             attackerCountry = null, // 这里可以根据需要存储攻击者信息
             lastUpdateTime = System.currentTimeMillis(),
-            displayPlayers = players.map { it.uniqueId }.toSet()
+            displayPlayers = newPlayerIds
         )
         bossBarDisplayCache[country.id] = displayInfo
     }
@@ -329,6 +396,7 @@ object CoreManager {
         countryBossBars.clear()
         bossBarDisplayCache.clear()
         lastAttackTime.clear()
+        lastBossBarUpdateTime.clear()
         pluginLogger.info("核心管理器已清理资源")
     }
 }

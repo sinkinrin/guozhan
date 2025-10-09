@@ -4,6 +4,7 @@ import cn.lcofficial.guozhan.manager.CountryManager
 import org.bukkit.Bukkit
 import org.bukkit.entity.Player
 import org.jetbrains.exposed.dao.id.IdTable
+import org.jetbrains.exposed.dao.id.EntityID
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.jetbrains.exposed.sql.update
 import java.util.*
@@ -16,10 +17,16 @@ object Users : IdTable<String>("gz_users") {
     val title = varchar("title", 32).default("国民")
     val profession = enumerationByName<Profession>("profession", 10).nullable()
     val professionLevel = integer("profession_level").default(1)
+    val claimMode = enumerationByName<ClaimMode>("claim_mode", 10).default(ClaimMode.AUTO)
 }
 
-enum class Rank(val value: Int) { 
-    OWNER(3), ADMIN(2), DEFAULT(1) 
+enum class Rank(val value: Int) {
+    OWNER(3), ADMIN(2), DEFAULT(1)
+}
+
+enum class ClaimMode {
+    AUTO,    // 自动占领模式
+    MANUAL   // 手动占领模式（需要木斧右键）
 }
 
 class User(
@@ -29,7 +36,8 @@ class User(
     var rank: Rank = Rank.DEFAULT,
     var title: String = "国民",
     var profession: Profession? = null,
-    var professionLevel: Int = 1
+    var professionLevel: Int = 1,
+    var claimMode: ClaimMode = ClaimMode.AUTO
 ) {
     var country: Country?
         get() {
@@ -53,11 +61,12 @@ class User(
     fun save() = transaction {
         Users.update({ Users.id eq uniqueId.toString() }) {
             it[name] = name
-            it[countryId] = this@User.countryId?.toString()
+            it[countryId] = this@User.countryId?.let { EntityID(it.toString(), Countries) }
             it[rank] = rank
             it[title] = title
             it[profession] = profession
             it[professionLevel] = professionLevel
+            it[claimMode] = this@User.claimMode
         }
     }
 

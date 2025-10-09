@@ -2,6 +2,7 @@ package cn.lcofficial.guozhan.data
 
 import cn.lcofficial.guozhan.manager.CountryManager
 import org.jetbrains.exposed.dao.id.IdTable
+import org.jetbrains.exposed.dao.id.EntityID
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.jetbrains.exposed.sql.update
 import java.util.*
@@ -31,7 +32,7 @@ class Territory(
 
     fun save() = transaction {
         Territories.update({ Territories.id eq id.toString() }) {
-            it[countryId] = this@Territory.countryId?.toString()
+            it[countryId] = this@Territory.countryId?.let { EntityID(it.toString(), Countries) }
             it[loyalty] = loyalty
             it[isCapital] = isCapital
         }

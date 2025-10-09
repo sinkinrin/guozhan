@@ -3,22 +3,24 @@ package cn.lcofficial.guozhan.manager
 import cn.lcofficial.guozhan.data.Country
 import cn.lcofficial.guozhan.data.ResourceType
 import cn.lcofficial.guozhan.data.User
+import cn.lcofficial.guozhan.pluginLogger
 import org.bukkit.Material
 import org.bukkit.entity.Player
 import org.bukkit.inventory.ItemStack
 import java.util.*
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.min
 
 /**
  * 经济管理器，负责处理国家经济、税收和资源上贡
  */
 object EconomyManager {
-    
+
     // 记录每个国家的税率，默认为10%
-    private val taxRates = mutableMapOf<UUID, Int>()
-    
+    private val taxRates = ConcurrentHashMap<UUID, Int>()
+
     // 记录每个国家的上次收税时间
-    private val lastTaxCollectionTime = mutableMapOf<UUID, Long>()
+    private val lastTaxCollectionTime = ConcurrentHashMap<UUID, Long>()
     
     // 税收周期（毫秒），默认24小时
     const val TAX_CYCLE = 24 * 60 * 60 * 1000L
@@ -176,28 +178,34 @@ object EconomyManager {
         if (user.rank.value < 2) { // 只有国王和管理员可以分配资源
             return false
         }
-        
+
         // 检查资源是否足够
         if (country.gold < goldAmount || country.diamond < diamondAmount) {
             return false
         }
-        
+
+        // 🔧 v1.3.15: 修复国库分配问题 - 确保扣除和发放的金额一致
         // 扣除国家资源
         country.gold -= goldAmount
         country.diamond -= diamondAmount
         country.save()
-        
+
         // 获取玩家实例并给予物品
         val player = user.player
         if (player != null) {
             if (goldAmount > 0) {
-                player.inventory.addItem(ItemStack(Material.GOLD_INGOT, goldAmount / 2))
+                // 修复：发放完整的金币数量，而不是一半
+                player.inventory.addItem(ItemStack(Material.GOLD_INGOT, goldAmount))
+                pluginLogger.info("[国库分配] 向玩家 ${user.name} 发放了 $goldAmount 金币")
             }
             if (diamondAmount > 0) {
-                player.inventory.addItem(ItemStack(Material.DIAMOND, diamondAmount / 3))
+                // 修复：发放完整的钻石数量，而不是三分之一
+                player.inventory.addItem(ItemStack(Material.DIAMOND, diamondAmount))
+                pluginLogger.info("[国库分配] 向玩家 ${user.name} 发放了 $diamondAmount 钻石")
             }
         }
-        
+
+        pluginLogger.info("[国库分配] 国家 ${country.name} 分配资源：金币 $goldAmount，钻石 $diamondAmount 给玩家 ${user.name}")
         return true
     }
 }

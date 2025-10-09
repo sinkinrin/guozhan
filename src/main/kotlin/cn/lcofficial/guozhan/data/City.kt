@@ -50,6 +50,12 @@ class City(
     fun save() = transaction {
         Cities.update({ Cities.id eq id }) {
             it[Cities.loyalty] = loyalty
+            // 🔧 v1.3.15: 修复王城所有权问题 - 持久化所有者字段
+            if (ownerId != null) {
+                it[Cities.owner] = org.jetbrains.exposed.dao.id.EntityID(ownerId.toString(), Countries)
+            } else {
+                it[Cities.owner] = null
+            }
         }
     }
 }
