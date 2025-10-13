@@ -74,8 +74,10 @@ class Country(
     val cities = mutableListOf<City>()
     val members: List<User>
         get() = transaction {
-            Users.select(listOf(Users.id, Users.countryId)).where { Users.countryId eq id }.map {
-                UserManager.getUser(UUID.fromString(it[Users.id].value))!!
+            Users.select(listOf(Users.id, Users.countryId)).where {
+                Users.countryId eq EntityID(id.toString(), Countries)
+            }.mapNotNull {
+                UserManager.getUser(UUID.fromString(it[Users.id].value))
             }.toList()
         }
 
@@ -98,6 +100,13 @@ class Country(
             it[coreLocationZ] = coreLocationZ
             it[coreWorld] = coreWorld
             it[lastHealthRegenTime] = lastHealthRegenTime
+        }
+
+        // 触发经济BossBar更新
+        try {
+            cn.lcofficial.guozhan.manager.EconomyBossBarManager.forceUpdate(this@Country)
+        } catch (e: Exception) {
+            // 忽略BossBar更新错误，避免影响数据保存
         }
     }
     
@@ -140,7 +149,7 @@ class Country(
             }
         }
         
-        coreHealth = 1000 // 初始化核心血量
+        coreHealth = cn.lcofficial.guozhan.config.Config.Country.coreHealthInitial // 使用配置的初始血量
         lastHealthRegenTime = System.currentTimeMillis()
         save()
     }
@@ -155,18 +164,20 @@ class Country(
     }
     
     /**
-     * 检查是否可以恢复血量（每分钟1点）
+     * 检查是否可以恢复血量
      */
     fun canRegenHealth(): Boolean {
-        return System.currentTimeMillis() - lastHealthRegenTime >= 60000 // 60秒
+        val regenInterval = cn.lcofficial.guozhan.config.Config.Country.coreRegenInterval * 1000L // 转换为毫秒
+        return System.currentTimeMillis() - lastHealthRegenTime >= regenInterval
     }
     
     /**
      * 恢复核心血量
      */
     fun regenHealth() {
-        if (canRegenHealth() && coreHealth < 1000) {
-            coreHealth = (coreHealth + 1).coerceAtMost(1000)
+        val maxHealth = cn.lcofficial.guozhan.config.Config.Country.coreHealthMax
+        if (canRegenHealth() && coreHealth < maxHealth) {
+            coreHealth = (coreHealth + cn.lcofficial.guozhan.config.Config.Country.coreRegenAmount).coerceAtMost(maxHealth)
             lastHealthRegenTime = System.currentTimeMillis()
             save()
         }

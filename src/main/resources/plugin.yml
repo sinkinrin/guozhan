@@ -33,6 +33,8 @@ permissions:
     children:
       guozhan.admin.use: true
       guozhan.admin.give: true
+      guozhan.admin.war: true
+      guozhan.admin.shield: true
       guozhan.admin.country: true
       guozhan.admin.economy: true
       guozhan.admin.territory: true
@@ -70,6 +72,12 @@ permissions:
     default: op
   guozhan.admin.notify:
     description: '接收GM操作通知权限'
+    default: op
+  guozhan.admin.war:
+    description: '战争管理权限'
+    default: op
+  guozhan.admin.shield:
+    description: '护盾管理权限'
     default: op
 
   # GM绕过权限

@@ -13,6 +13,8 @@ import org.bukkit.boss.BarColor
 import org.bukkit.boss.BarStyle
 import org.bukkit.boss.BossBar
 import org.bukkit.entity.Player
+import org.bukkit.Material
+
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
@@ -32,16 +34,16 @@ data class BossBarDisplayInfo(
  * 负责管理国家核心的生命值、攻击和显示
  */
 object CoreManager {
-    
+
     // 玩家攻击核心的冷却时间 (毫秒)
     private const val ATTACK_COOLDOWN = 500L
-    
+
     // 每次攻击扣除的血量
     private const val DAMAGE_PER_ATTACK = 5
-    
+
     // 记录玩家上次攻击核心的时间
     private val lastAttackTime = ConcurrentHashMap<UUID, Long>()
-    
+
     // 每个国家的BossBar显示
     private val countryBossBars = ConcurrentHashMap<UUID, BossBar>()
 
@@ -56,15 +58,22 @@ object CoreManager {
 
     // 上次BossBar更新时间
     private val lastBossBarUpdateTime = ConcurrentHashMap<UUID, Long>()
-    
+
     /**
      * 初始化核心管理器
      */
     fun initialize() {
         startHealthRegenTask()
+        // 启动时校验并恢复所有国家的核心方块与保护玻璃
+        try {
+            restoreAllCoresOnStartup()
+        } catch (e: Exception) {
+            pluginLogger.severe("启动时恢复核心方块失败: ${e.message}")
+            e.printStackTrace()
+        }
         pluginLogger.info("核心管理器已初始化")
     }
-    
+
     /**
      * 启动核心血量回复任务
      * 使用Folia的GlobalRegionScheduler进行全局定时任务
@@ -102,31 +111,34 @@ object CoreManager {
 
         pluginLogger.info("核心血量回复任务已启动 (Folia GlobalRegionScheduler)")
     }
-    
+
     /**
      * 玩家攻击核心
      */
     fun attackCore(player: Player, country: Country): Boolean {
         val playerId = player.uniqueId
         val currentTime = System.currentTimeMillis()
-        
+
         // 检查冷却时间
         val lastAttack = lastAttackTime[playerId] ?: 0L
         if (currentTime - lastAttack < ATTACK_COOLDOWN) {
             return false
         }
-        
+
         // 检查玩家是否可以攻击这个国家的核心
         if (!canAttackCore(player, country)) {
             player.sendMessage("§c你不能攻击这个国家的核心！")
             return false
         }
-        
+
         // 记录攻击时间
         lastAttackTime[playerId] = currentTime
-        
+
+        // 计算实际伤害（考虑离线保护）
+        val actualDamage = calculateActualDamage(country, DAMAGE_PER_ATTACK)
+
         // 对核心造成伤害
-        val destroyed = country.damageCore(DAMAGE_PER_ATTACK)
+        val destroyed = country.damageCore(actualDamage)
 
         // 获取攻击者国家
         val attackerUser = UserManager.getUser(player.uniqueId)
@@ -136,48 +148,120 @@ object CoreManager {
         updateBossBar(country, attackerCountry)
 
         // 向相关玩家发送消息
-        val attackerMessage = "§c你攻击了 ${country.name} 的核心！剩余血量：${country.coreHealth}/1000"
+        val maxHealth = cn.lcofficial.guozhan.config.Config.Country.coreHealthInitial
+        val attackerMessage = if (actualDamage < DAMAGE_PER_ATTACK) {
+            "§c你攻击了 ${country.name} 的核心！造成 ${actualDamage} 点伤害（离线保护减伤）剩余血量：${country.coreHealth}/${maxHealth}"
+        } else {
+            "§c你攻击了 ${country.name} 的核心！造成 ${actualDamage} 点伤害，剩余血量：${country.coreHealth}/${maxHealth}"
+        }
         player.sendMessage(attackerMessage)
-        
+
         // 通知被攻击国家的成员
         country.members.forEach { member ->
             val memberPlayer = Bukkit.getPlayer(member.uniqueId)
             if (memberPlayer != null && memberPlayer.isOnline) {
-                memberPlayer.sendMessage("§c警告！你的国家核心正在被 ${player.name} 攻击！剩余血量：${country.coreHealth}/1000")
+                val defenderMessage = if (actualDamage < DAMAGE_PER_ATTACK) {
+                    "§c警告！你的国家核心正在被 ${player.name} 攻击！受到 ${actualDamage} 点伤害（离线保护减伤），剩余血量：${country.coreHealth}/${maxHealth}"
+                } else {
+                    "§c警告！你的国家核心正在被 ${player.name} 攻击！受到 ${actualDamage} 点伤害，剩余血量：${country.coreHealth}/${maxHealth}"
+                }
+                memberPlayer.sendMessage(defenderMessage)
             }
         }
-        
+
         // 如果核心被摧毁
         if (destroyed) {
             onCoreDestroyed(country, player)
         }
-        
+
         return true
     }
-    
+
     /**
      * 检查玩家是否可以攻击核心
      */
     private fun canAttackCore(player: Player, country: Country): Boolean {
         val attackerUser = UserManager.getUser(player.uniqueId)
-        
+
         // 不能攻击自己国家的核心
         if (attackerUser?.country?.id == country.id) {
             return false
         }
-        
-        // 检查是否处于战争状态或敌对关系
-        if (attackerUser?.country != null) {
-            val relation = DiplomacyManager.getRelation(attackerUser.country!!, country)
-            if (relation.relationType != cn.lcofficial.guozhan.data.RelationType.WAR && 
-                relation.relationType != cn.lcofficial.guozhan.data.RelationType.HOSTILE) {
-                return false
+
+        // 检查是否需要宣战
+        if (cn.lcofficial.guozhan.config.Config.Country.CoreProtection.requireWarDeclaration) {
+            if (attackerUser?.country != null) {
+                val relation = DiplomacyManager.getRelation(attackerUser.country!!, country)
+                if (relation.relationType != cn.lcofficial.guozhan.data.RelationType.WAR &&
+                    relation.relationType != cn.lcofficial.guozhan.data.RelationType.HOSTILE) {
+                    player.sendMessage("§c你必须先向 ${country.name} 宣战才能攻击其核心！使用 /u war declare <国家名> 宣战")
+                    return false
+                }
             }
         }
-        
+
+        // 检查离线保护
+        if (cn.lcofficial.guozhan.config.Config.Country.CoreProtection.offlineProtection) {
+            val onlineMembers = getOnlineMembers(country)
+            val minOnlineMembers = cn.lcofficial.guozhan.config.Config.Country.CoreProtection.minOnlineMembers
+
+            Guozhan.instance.logger.info("[调试] 离线保护检查 - 国家: ${country.name}")
+            Guozhan.instance.logger.info("[调试] 在线成员数: ${onlineMembers.size}, 最少需要: ${minOnlineMembers}")
+
+            if (onlineMembers.size < minOnlineMembers) {
+                player.sendMessage("§c该国家当前没有足够的在线成员，核心受到离线保护！")
+                player.sendMessage("§c需要至少 ${minOnlineMembers} 名成员在线才能攻击核心")
+                player.sendMessage("§c当前在线成员: ${onlineMembers.size}/${minOnlineMembers}")
+                return false
+            } else {
+                Guozhan.instance.logger.info("[调试] 离线保护检查通过，允许攻击")
+            }
+        }
+
         return true
     }
-    
+
+    /**
+     * 获取国家的在线成员列表
+     */
+    private fun getOnlineMembers(country: Country): List<Player> {
+        val members = country.members
+        val onlineMembers = members.mapNotNull { member ->
+            org.bukkit.Bukkit.getPlayer(member.uniqueId)?.takeIf { it.isOnline }
+        }
+
+        // 调试信息
+        Guozhan.instance.logger.info("[调试] 国家 '${country.name}' 成员检查:")
+        Guozhan.instance.logger.info("[调试] 总成员数: ${members.size}")
+        members.forEach { member ->
+            val player = org.bukkit.Bukkit.getPlayer(member.uniqueId)
+            val isOnline = player?.isOnline ?: false
+            Guozhan.instance.logger.info("[调试] 成员 ${member.name} (${member.uniqueId}): 在线=$isOnline")
+        }
+        Guozhan.instance.logger.info("[调试] 在线成员数: ${onlineMembers.size}")
+
+        return onlineMembers
+    }
+
+    /**
+     * 计算实际伤害（考虑离线保护等因素）
+     */
+    private fun calculateActualDamage(country: Country, baseDamage: Int): Int {
+        var damage = baseDamage.toDouble()
+
+        // 检查是否有足够的在线成员
+        val onlineMembers = getOnlineMembers(country)
+        val minOnlineMembers = cn.lcofficial.guozhan.config.Config.Country.CoreProtection.minOnlineMembers
+
+        if (onlineMembers.size < minOnlineMembers) {
+            // 离线攻击伤害减少
+            val reduction = cn.lcofficial.guozhan.config.Config.Country.CoreProtection.offlineAttackDamageReduction
+            damage *= (1.0 - reduction)
+        }
+
+        return damage.toInt().coerceAtLeast(1) // 至少造成1点伤害
+    }
+
     /**
      * 核心被摧毁时的处理
      */
@@ -185,13 +269,13 @@ object CoreManager {
         // 广播核心被摧毁的消息
         val message = "§c${country.name} 的核心已被 ${destroyer.name} 摧毁！该国家现在可以被占领！"
         Bukkit.broadcastMessage(message)
-        
+
         // 移除BossBar
         removeBossBar(country)
-        
+
         pluginLogger.info("国家 ${country.name} 的核心被玩家 ${destroyer.name} 摧毁")
     }
-    
+
     /**
      * 更新国家的BossBar显示
      * @param country 被攻击的国家
@@ -222,19 +306,21 @@ object CoreManager {
         // 更新标题和进度
         val titleFormat = Config.BossBar.titleFormat.replace("{country}", country.name)
         bossBar.setTitle(titleFormat)
-        bossBar.progress = country.coreHealth.toDouble() / 1000.0
+        val maxHealth = cn.lcofficial.guozhan.config.Config.Country.coreHealthMax
+        bossBar.progress = (country.coreHealth.toDouble() / maxHealth.toDouble()).coerceIn(0.0, 1.0)
 
-        // 根据血量调整颜色
+        // 根据血量调整颜色（按比例）
+        val healthRatio = country.coreHealth.toDouble() / maxHealth.toDouble()
         bossBar.color = when {
-            country.coreHealth > 700 -> BarColor.GREEN
-            country.coreHealth > 300 -> BarColor.YELLOW
+            healthRatio > 0.7 -> BarColor.GREEN
+            healthRatio > 0.3 -> BarColor.YELLOW
             else -> BarColor.RED
         }
 
         // 异步更新显示玩家
         updateBossBarPlayersAsync(country, attackerCountry, bossBar)
     }
-    
+
     /**
      * 获取或创建国家的BossBar
      */
@@ -244,10 +330,51 @@ object CoreManager {
                 "${country.name} 核心血量",
                 BarColor.GREEN,
                 BarStyle.SOLID
+
             )
         }
     }
-    
+
+    /**
+     * 启动时恢复所有国家核心的方块与保护玻璃
+     */
+    private fun restoreAllCoresOnStartup() {
+        CountryManager.countries.values.forEach { country ->
+            val coreLoc = country.getCoreLocation()
+            if (coreLoc == null) {
+                pluginLogger.warning("[核心恢复] 国家 ${country.name} 未设置核心位置，跳过")
+                return@forEach
+            }
+            // 在对应区域线程执行方块操作
+            Bukkit.getRegionScheduler().run(Guozhan.instance, coreLoc) { _ ->
+                try {
+                    // 恢复中心信标
+                    if (coreLoc.block.type != Material.BEACON) {
+                        coreLoc.block.type = Material.BEACON
+                    }
+                    // 恢复保护玻璃立方体
+                    for (x in -1..1) {
+                        for (y in -1..1) {
+                            for (z in -1..1) {
+                                if (x == 0 && y == 0 && z == 0) continue
+                                val p = coreLoc.clone().add(x.toDouble(), y.toDouble(), z.toDouble())
+                                // 只要不是信标，统一恢复为玻璃
+                                if (p.block.type != Material.GLASS) {
+                                    p.block.type = Material.GLASS
+                                }
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    pluginLogger.severe("[核心恢复] 恢复国家 ${country.name} 的核心方块失败: ${e.message}")
+                    e.printStackTrace()
+                }
+            }
+        }
+        pluginLogger.info("[核心恢复] 启动时已校验并恢复所有国家的核心方块与保护玻璃")
+    }
+
+
     /**
      * 检查是否应该显示 BossBar
      * @param country 被攻击的国家
@@ -364,7 +491,7 @@ object CoreManager {
         )
         bossBarDisplayCache[country.id] = displayInfo
     }
-    
+
     /**
      * 移除国家的BossBar
      */
@@ -374,19 +501,19 @@ object CoreManager {
             countryBossBars.remove(country.id)
         }
     }
-    
+
     /**
      * 查找核心所属的国家
      */
     fun findCoreCountry(location: org.bukkit.Location): Country? {
         return CountryManager.countries.values.find { country ->
             val coreLocation = country.getCoreLocation()
-            coreLocation != null && 
+            coreLocation != null &&
             coreLocation.world.name == location.world.name &&
             coreLocation.distance(location) <= 2.0 // 2格范围内认为是核心区域
         }
     }
-    
+
     /**
      * 插件卸载时清理资源
      */

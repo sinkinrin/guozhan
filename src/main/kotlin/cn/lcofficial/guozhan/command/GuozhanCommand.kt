@@ -1009,7 +1009,53 @@ object GuozhanCommand : TabExecutor {
             return@transaction
         }
 
-        // 5. 检查物品是否足够（在所有其他检查通过后）
+        // 5. 检查与其他国家的距离
+        val playerChunkX = sender.location.blockX shr 4
+        val playerChunkZ = sender.location.blockZ shr 4
+        val minDistance = Config.Country.Creation.minDistanceBetweenCountries
+
+        // 调试信息：显示当前玩家位置
+        sender.sendMessage("§7[调试] 当前位置: 方块坐标(${sender.location.blockX}, ${sender.location.blockZ}), 区块坐标($playerChunkX, $playerChunkZ)")
+        sender.sendMessage("§7[调试] 最小距离要求: $minDistance 区块 (${minDistance * 16} 格)")
+
+        var nearbyCountry: Country? = null
+        var minDistanceFound = Int.MAX_VALUE
+        var closestCountryInfo = ""
+
+        CountryManager.countries.values.forEach { country ->
+            val capital = country.capital
+            val capitalChunkX = capital.x
+            val capitalChunkZ = capital.z
+            val chunkDistance = kotlin.math.max(
+                kotlin.math.abs(playerChunkX - capitalChunkX),
+                kotlin.math.abs(playerChunkZ - capitalChunkZ)
+            )
+            val blockDistance = chunkDistance * 16
+
+            // 记录最近的国家信息
+            if (chunkDistance < minDistanceFound) {
+                minDistanceFound = chunkDistance
+                closestCountryInfo = "国家 '${country.name}' 距离: $chunkDistance 区块 (${blockDistance} 格), 位置: 区块($capitalChunkX, $capitalChunkZ)"
+            }
+
+            sender.sendMessage("§7[调试] 检查国家 '${country.name}': 区块($capitalChunkX, $capitalChunkZ), 距离: $chunkDistance 区块 (${blockDistance} 格)")
+
+            if (chunkDistance < minDistance) {
+                nearbyCountry = country
+            }
+        }
+
+        if (nearbyCountry != null) {
+            sender.sendMessage("§c不能在其他国家附近创建国家！")
+            sender.sendMessage("§c$closestCountryInfo")
+            sender.sendMessage("§c最小距离要求: $minDistance 区块 (${minDistance * 16} 格)")
+            sender.sendMessage("§c请至少移动到 ${minDistance * 16} 格以外的位置")
+            return@transaction
+        } else {
+            sender.sendMessage("§a[调试] 距离检查通过！最近的国家: $closestCountryInfo")
+        }
+
+        // 6. 检查物品是否足够（在所有其他检查通过后）
         val requiredMaterial = Config.Country.Creation.ItemCost.material
         val requiredAmount = Config.Country.Creation.ItemCost.amount
 

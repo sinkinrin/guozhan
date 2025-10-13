@@ -5,6 +5,65 @@ All notable changes to the GuoZhan (国战) plugin will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.22] - 2025-10-13 - GM战争管理系统
+
+### Added
+- **GM战争管理命令**: 完整的战争管理员控制系统
+  - `/gzgm startwar <国家1> <国家2>`: 手动触发战争，绕过时间限制
+  - `/gzgm endwar <国家1> <国家2>`: 手动结束战争
+  - `/gzgm warinfo`: 查看当前所有活跃战争状态
+  - 支持在非周六时间启动战争，用于测试和特殊活动
+
+- **GM护盾管理命令**: 护盾系统管理员控制
+  - `/gzgm shield <国家> <小时>`: 强制激活护盾，绕过王战时间段限制
+  - 保留其他检查条件（资源、冷却、长宽比等）
+  - 适用于紧急情况和测试场景
+
+- **时间限制绕过机制**: GM模式突破游戏时间限制
+  - 战争系统：绕过周六19:20-22:00时间限制
+  - 护盾系统：绕过王战时间段限制
+  - 所有GM操作显示`[GM模式]`标识
+  - 完整的操作日志记录
+
+- **权限系统扩展**:
+  - `guozhan.admin.war`: 战争管理权限
+  - `guozhan.admin.shield`: 护盾管理权限
+  - 权限继承和Tab补全支持
+
+- **管理员指南**: `docs/ADMIN_GUIDE.md`
+  - 详细的GM命令使用说明
+  - 权限系统配置指南
+  - 使用场景和最佳实践
+
+### Enhanced
+- **WarManager**: 新增GM模式战争管理方法
+- **ShieldManager**: 支持GM模式时间限制绕过
+- **GMCommand**: 扩展战争和护盾管理功能
+- **权限系统**: 细粒度的GM权限控制
+
+## [v1.3.21] - 2025-10-13
+
+### 🧪 测试系统全面扩展
+
+#### 新增单元测试覆盖
+- **ConfigTest**: 配置系统测试（9个测试）- 验证Shield、Profession、Tax、War、Territory配置对象
+- **ShieldManagerTest**: 护盾系统测试（8个测试）- 长宽比计算、成本计算、冷却逻辑
+- **ProfessionManagerTest**: 职业系统测试（8个测试）- 职业解锁、升级检查、效果配置
+- **CountryManagerTest**: 国家管理测试（6个测试）- 国家删除、缓存管理、数据完整性
+- **DisbandCommandTest**: 解散功能测试（7个测试）- 两步确认、超时处理、权限检查
+
+#### 集成测试方案建立
+- **测试计划**: `docs/testing/integration-test-plan.md` - 完整的集成测试策略
+- **测试用例**: `docs/testing/manual-test-cases.md` - 10个详细的人工测试用例
+- **数据准备**: `docs/testing/test-data-setup.md` - 测试环境和数据准备指南
+- **执行指南**: `docs/TESTING.md` - 测试执行和质量保证文档
+
+#### 测试质量提升
+- **覆盖率**: 从基础逻辑测试扩展到约50%的代码覆盖
+- **测试总数**: 69个单元测试全部通过，执行时间约9秒
+- **自动化**: 通过 `./gradlew test` 一键执行所有测试
+- **边界条件**: 增加配置边界值、空值、异常输入等测试场景
+
 ## [v1.3.20] - 2025-10-09
 
 ### 🔧 配置架构统一化和功能完善

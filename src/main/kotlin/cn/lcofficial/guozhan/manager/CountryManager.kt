@@ -16,6 +16,7 @@ import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 
@@ -170,7 +171,7 @@ object CountryManager {
                         lastHarvestTime = 0L,
                         lastLoyaltyUpdateTime = System.currentTimeMillis(),
                         isCapital = isCenterBlock, // 只有中心区块是首都
-                        coreHealth = if (isCenterBlock) 1000 else 0, // 首都区块初始血量1000，其他为0
+                        coreHealth = if (isCenterBlock) cn.lcofficial.guozhan.config.Config.Country.coreHealthInitial else 0, // 首都区块使用配置的初始血量，其他为0
                         lastCoreHealthUpdateTime = System.currentTimeMillis()
                     )
 

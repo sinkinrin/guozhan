@@ -49,9 +49,10 @@ dependencies {
 
 tasks.shadowJar {
     archiveClassifier.set("")
-    relocate("kotlin", "cn.lcofficial.guozhan.libs.kotlin")
-    relocate("org.jetbrains.exposed", "cn.lcofficial.guozhan.libs.exposed")
-    relocate("com.alibaba.fastjson2", "cn.lcofficial.guozhan.libs.fastjson")
+    // 暂时移除所有重定位以解决类加载问题
+    // relocate("kotlin", "cn.lcofficial.guozhan.libs.kotlin")
+    // relocate("org.jetbrains.exposed", "cn.lcofficial.guozhan.libs.exposed")
+    // relocate("com.alibaba.fastjson2", "cn.lcofficial.guozhan.libs.fastjson")
 }
 
 java {

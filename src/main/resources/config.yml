@@ -25,9 +25,18 @@ country:
     item_cost:
       material: "IRON_INGOT" # 创建国家所需的物品类型
       amount: 64 # 创建国家所需的物品数量
+    min-distance-between-countries: 2 # 国家之间的最小距离（区块）- 测试值：5区块(80格)，正式环境建议：50区块(800格)
   core-health-max: 1000
+  core-health-initial: 50 # 初始核心血量（测试用）
   core-regen-interval: 60 # 秒
   core-regen-amount: 1
+
+  # 核心保护机制
+  core-protection:
+    offline-protection: true # 离线保护开关
+    min-online-members: 1 # 攻击核心需要的最少在线成员数
+    require-war-declaration: true # 是否需要宣战才能攻击核心
+    offline-attack-damage-reduction: 0.5 # 攻击离线国家的伤害减少（0.5 = 50%伤害）
 
 # 领土设置
 territory:

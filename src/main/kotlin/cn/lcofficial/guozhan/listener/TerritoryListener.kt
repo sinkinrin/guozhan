@@ -41,6 +41,9 @@ object TerritoryListener : Listener {
         // 如果领土没有所有者，允许任何人破坏
         if (!territory.isOwned()) return
 
+        // OP玩家有特殊权限，可以在任何地方破坏方块
+        if (player.isOp) return
+
         // 如果玩家不属于任何国家，或者不是领土所属国家的成员，取消事件
         if (user.country == null || user.country?.id != territory.owner?.id) {
             event.isCancelled = true
@@ -48,10 +51,11 @@ object TerritoryListener : Listener {
             return
         }
 
-        // 如果玩家是普通成员，且领土忠诚度低于50，不允许破坏
-        if (user.rank == Rank.DEFAULT && territory.loyalty < 50) {
+        // 修复权限逻辑：只有在领土忠诚度极低（<20）且玩家是普通成员时才限制
+        // 这样可以确保国家成员在正常情况下都能建造
+        if (user.rank == Rank.DEFAULT && territory.loyalty < 20) {
             event.isCancelled = true
-            notifyPlayerIfNeeded(player, "§c这块领土的忠诚度太低，只有管理员或国家所有者才能在此操作！")
+            notifyPlayerIfNeeded(player, "§c这块领土的忠诚度极低（${territory.loyalty}%），只有管理员或国家所有者才能在此操作！")
             return
         }
     }
@@ -65,6 +69,9 @@ object TerritoryListener : Listener {
         // 如果领土没有所有者，允许任何人放置
         if (!territory.isOwned()) return
 
+        // OP玩家有特殊权限，可以在任何地方放置方块
+        if (player.isOp) return
+
         // 如果玩家不属于任何国家，或者不是领土所属国家的成员，取消事件
         if (user.country == null || user.country?.id != territory.owner?.id) {
             event.isCancelled = true
@@ -72,10 +79,11 @@ object TerritoryListener : Listener {
             return
         }
 
-        // 如果玩家是普通成员，且领土忠诚度低于50，不允许放置
-        if (user.rank == Rank.DEFAULT && territory.loyalty < 50) {
+        // 修复权限逻辑：只有在领土忠诚度极低（<20）且玩家是普通成员时才限制
+        // 这样可以确保国家成员在正常情况下都能建造
+        if (user.rank == Rank.DEFAULT && territory.loyalty < 20) {
             event.isCancelled = true
-            notifyPlayerIfNeeded(player, "§c这块领土的忠诚度太低，只有管理员或国家所有者才能在此操作！")
+            notifyPlayerIfNeeded(player, "§c这块领土的忠诚度极低（${territory.loyalty}%），只有管理员或国家所有者才能在此操作！")
             return
         }
     }
@@ -132,6 +140,9 @@ object TerritoryListener : Listener {
             else -> false
         }
 
+        // OP玩家有特殊权限，可以使用任何容器
+        if (player.isOp) return
+
         // 如果是容器且玩家不是领土所属国家的成员，取消事件
         if (isContainer && (user.country == null || user.country?.id != territory.owner?.id)) {
             event.isCancelled = true
@@ -139,10 +150,10 @@ object TerritoryListener : Listener {
             return
         }
 
-        // 如果玩家是普通成员，且领土忠诚度低于50，不允许使用容器
-        if (isContainer && user.rank == Rank.DEFAULT && territory.loyalty < 50) {
+        // 修复权限逻辑：只有在领土忠诚度极低（<20）且玩家是普通成员时才限制容器使用
+        if (isContainer && user.rank == Rank.DEFAULT && territory.loyalty < 20) {
             event.isCancelled = true
-            notifyPlayerIfNeeded(player, "§c这块领土的忠诚度太低，只有管理员或国家所有者才能使用容器！")
+            notifyPlayerIfNeeded(player, "§c这块领土的忠诚度极低（${territory.loyalty}%），只有管理员或国家所有者才能使用容器！")
             return
         }
     }

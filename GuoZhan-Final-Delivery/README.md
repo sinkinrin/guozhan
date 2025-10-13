@@ -181,6 +181,7 @@ GuoZhan-Final-Delivery/
 
 - **技术支持**: 请查看 `docs/FAQ.md` 获取常见问题解答
 - **文档**: 完整文档位于 `docs/` 目录
+- **测试指南**: 参考 `../docs/TESTING.md` 了解测试执行方法
 - **配置帮助**: 参考 `examples/` 目录中的配置示例
 
 ## 📄 许可证

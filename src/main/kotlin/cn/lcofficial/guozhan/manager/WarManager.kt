@@ -10,6 +10,7 @@ import org.bukkit.Bukkit
 import org.bukkit.entity.Player
 import org.bukkit.event.entity.EntityDamageByEntityEvent
 import org.bukkit.event.entity.PlayerDeathEvent
+import org.bukkit.command.CommandSender
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 
@@ -263,12 +264,79 @@ object WarManager {
         val minutes = seconds / 60
         val hours = minutes / 60
         val days = hours / 24
-        
+
         return when {
             days > 0 -> "${days}天${hours % 24}小时"
             hours > 0 -> "${hours}小时${minutes % 60}分钟"
             minutes > 0 -> "${minutes}分钟${seconds % 60}秒"
             else -> "${seconds}秒"
         }
+    }
+
+    /**
+     * GM模式：手动触发战争（绕过时间限制）
+     */
+    fun startWarGM(country1: Country, country2: Country) {
+        val warId = getWarId(country1, country2)
+        warStartTimes[warId] = System.currentTimeMillis()
+
+        // 更新外交关系为战争状态
+        DiplomacyManager.updateRelation(country1, country2, RelationType.WAR)
+
+        // 广播战争开始消息（带GM标识）
+        val message = "§c§l[GM模式] 战争爆发! §f${country1.name} §c与 §f${country2.name} §c进入战争状态!"
+        Bukkit.getOnlinePlayers().forEach { player ->
+            player.sendMessage(message)
+        }
+
+        Guozhan.instance.logger.info("[GM模式] 手动触发战争: ${country1.name} vs ${country2.name}")
+    }
+
+    /**
+     * GM模式：手动结束战争
+     */
+    fun endWarGM(country1: Country, country2: Country, gmSender: CommandSender?) {
+        val warId = getWarId(country1, country2)
+        warStartTimes.remove(warId)
+
+        // 更新外交关系为敌对状态
+        DiplomacyManager.updateRelation(country1, country2, RelationType.HOSTILE)
+
+        // 广播战争结束消息（带GM标识）
+        val message = "§6[GM模式] 战争结束! §f${country1.name} §6与 §f${country2.name} §6的战争已被管理员强制结束!"
+        Bukkit.getOnlinePlayers().forEach { player ->
+            player.sendMessage(message)
+        }
+
+        val gmName = gmSender?.name ?: "系统"
+        Guozhan.instance.logger.info("[GM模式] 管理员 $gmName 强制结束战争: ${country1.name} vs ${country2.name}")
+    }
+
+    /**
+     * 获取所有活跃战争
+     */
+    fun getAllActiveWars(): Map<String, Pair<Country, Country>> {
+        val activeWars = mutableMapOf<String, Pair<Country, Country>>()
+
+        for ((warId, _) in warStartTimes) {
+            try {
+                val countryIds = warId.split("_")
+                if (countryIds.size != 2) continue
+
+                val country1Id = UUID.fromString(countryIds[0])
+                val country2Id = UUID.fromString(countryIds[1])
+                val country1 = CountryManager.getCountryById(country1Id)
+                val country2 = CountryManager.getCountryById(country2Id)
+
+                if (country1 != null && country2 != null) {
+                    activeWars[warId] = Pair(country1, country2)
+                }
+            } catch (e: Exception) {
+                // 跳过无效的战争ID
+                continue
+            }
+        }
+
+        return activeWars
     }
 }

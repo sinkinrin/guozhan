@@ -52,6 +52,10 @@ class GMCommand : CommandExecutor, TabCompleter {
             "info" -> handleInfo(sender, args)
             "setrank" -> handleSetRank(sender, args)
             "cleardb" -> handleClearDatabase(sender, args)
+            "startwar" -> handleStartWar(sender, args)
+            "endwar" -> handleEndWar(sender, args)
+            "warinfo" -> handleWarInfo(sender, args)
+            "shield" -> handleShield(sender, args)
             "help" -> showHelp(sender)
             else -> {
                 sender.sendError("未知的GM命令: ${args[0]}")
@@ -629,6 +633,11 @@ class GMCommand : CommandExecutor, TabCompleter {
         sender.sendInfo("§e/gzgm info <国家|玩家> §7- 查看详细信息")
         sender.sendInfo("§c/gzgm setrank <玩家> <等级> §7- 设置玩家权限等级")
         sender.sendInfo("§c/gzgm cleardb confirm §7- 清空整个数据库(危险)")
+        sender.sendInfo("§c=== 战争管理命令 ===")
+        sender.sendInfo("§e/gzgm startwar <国家1> <国家2> §7- 手动触发战争")
+        sender.sendInfo("§e/gzgm endwar <国家1> <国家2> §7- 手动结束战争")
+        sender.sendInfo("§e/gzgm warinfo §7- 查看当前战争状态")
+        sender.sendInfo("§e/gzgm shield <国家> <小时> §7- 强制激活护盾(绕过时间限制)")
     }
 
     override fun onTabComplete(sender: CommandSender, command: Command, alias: String, args: Array<out String>): MutableList<String>? {
@@ -646,7 +655,7 @@ class GMCommand : CommandExecutor, TabCompleter {
 
     private fun getMainCommands(sender: CommandSender): List<String> {
         val commands = mutableListOf<String>()
-        
+
         if (sender.hasPermission("guozhan.admin.give")) commands.add("give")
         if (sender.hasPermission("guozhan.admin.country")) commands.add("setcountry")
         if (sender.hasPermission("guozhan.admin.economy")) {
@@ -660,6 +669,14 @@ class GMCommand : CommandExecutor, TabCompleter {
         if (sender.hasPermission("guozhan.admin.data")) commands.add("cleardata")
         if (sender.hasPermission("guozhan.admin.setrank")) commands.add("setrank")
         if (sender.hasPermission("guozhan.admin.cleardb")) commands.add("cleardb")
+        if (sender.hasPermission("guozhan.admin.war")) {
+            commands.add("startwar")
+            commands.add("endwar")
+            commands.add("warinfo")
+        }
+        if (sender.hasPermission("guozhan.admin.shield")) {
+            commands.add("shield")
+        }
 
         commands.addAll(listOf("info", "help"))
 
@@ -669,13 +686,232 @@ class GMCommand : CommandExecutor, TabCompleter {
     private fun getSubCommands(sender: CommandSender, mainCommand: String): List<String> {
         return when (mainCommand.lowercase()) {
             "give" -> listOf("IRON_INGOT", "GOLD_INGOT", "DIAMOND", "EMERALD")
-            "setcountry", "addgold", "adddiamonds", "tp", "info" ->
+            "setcountry", "addgold", "adddiamonds", "tp", "info", "startwar", "endwar", "shield" ->
                 CountryManager.getAllCountries().map { it.name }
             "debug" -> listOf("on", "off")
             "cleardata" -> listOf("countries", "territories", "users", "all")
             "setrank" -> listOf("DEFAULT", "ADMIN", "OWNER")
             "cleardb" -> listOf("confirm")
             else -> emptyList()
+        }
+    }
+
+    /**
+     * 手动触发战争
+     * /gzgm startwar <国家1> <国家2>
+     */
+    private fun handleStartWar(sender: CommandSender, args: Array<out String>) {
+        if (!sender.hasPermission("guozhan.admin.war")) {
+            sender.sendError("你没有权限使用战争管理命令")
+            return
+        }
+
+        if (args.size < 3) {
+            sender.sendError("用法: /gzgm startwar <国家1> <国家2>")
+            return
+        }
+
+        val country1Name = args[1]
+        val country2Name = args[2]
+
+        val country1 = CountryManager.getByName(country1Name)
+        val country2 = CountryManager.getByName(country2Name)
+
+        if (country1 == null) {
+            sender.sendError("国家 $country1Name 不存在")
+            return
+        }
+
+        if (country2 == null) {
+            sender.sendError("国家 $country2Name 不存在")
+            return
+        }
+
+        if (country1.id == country2.id) {
+            sender.sendError("不能让国家与自己开战")
+            return
+        }
+
+        // 检查是否已经在战争中
+        if (WarManager.isAtWar(country1, country2)) {
+            sender.sendError("${country1.name} 与 ${country2.name} 已经处于战争状态")
+            return
+        }
+
+        try {
+            // GM模式：绕过时间限制直接启动战争
+            WarManager.startWarGM(country1, country2)
+
+            sender.sendSuccess("§c[GM模式] §f已手动触发 §e${country1.name} §f与 §e${country2.name} §f之间的战争")
+
+            // 记录GM操作
+            GMLogger.logGMAction(sender, "START_WAR", null, mapOf(
+                "country1" to country1.name,
+                "country2" to country2.name,
+                "bypass_time_limit" to true
+            ))
+
+        } catch (e: Exception) {
+            sender.sendError("启动战争时发生错误: ${e.message}")
+            e.printStackTrace()
+        }
+    }
+
+    /**
+     * 手动结束战争
+     * /gzgm endwar <国家1> <国家2>
+     */
+    private fun handleEndWar(sender: CommandSender, args: Array<out String>) {
+        if (!sender.hasPermission("guozhan.admin.war")) {
+            sender.sendError("你没有权限使用战争管理命令")
+            return
+        }
+
+        if (args.size < 3) {
+            sender.sendError("用法: /gzgm endwar <国家1> <国家2>")
+            return
+        }
+
+        val country1Name = args[1]
+        val country2Name = args[2]
+
+        val country1 = CountryManager.getByName(country1Name)
+        val country2 = CountryManager.getByName(country2Name)
+
+        if (country1 == null) {
+            sender.sendError("国家 $country1Name 不存在")
+            return
+        }
+
+        if (country2 == null) {
+            sender.sendError("国家 $country2Name 不存在")
+            return
+        }
+
+        // 检查是否在战争中
+        if (!WarManager.isAtWar(country1, country2)) {
+            sender.sendError("${country1.name} 与 ${country2.name} 当前没有处于战争状态")
+            return
+        }
+
+        try {
+            // GM模式：直接结束战争
+            WarManager.endWarGM(country1, country2, sender)
+
+            sender.sendSuccess("§c[GM模式] §f已手动结束 §e${country1.name} §f与 §e${country2.name} §f之间的战争")
+
+            // 记录GM操作
+            GMLogger.logGMAction(sender, "END_WAR", null, mapOf(
+                "country1" to country1.name,
+                "country2" to country2.name,
+                "forced_end" to true
+            ))
+
+        } catch (e: Exception) {
+            sender.sendError("结束战争时发生错误: ${e.message}")
+            e.printStackTrace()
+        }
+    }
+
+    /**
+     * 查看当前战争状态
+     * /gzgm warinfo
+     */
+    private fun handleWarInfo(sender: CommandSender, args: Array<out String>) {
+        if (!sender.hasPermission("guozhan.admin.war")) {
+            sender.sendError("你没有权限使用战争管理命令")
+            return
+        }
+
+        try {
+            val activeWars = WarManager.getAllActiveWars()
+
+            if (activeWars.isEmpty()) {
+                sender.sendInfo("§a当前没有活跃的战争")
+                return
+            }
+
+            sender.sendInfo("§6===== 当前活跃战争状态 =====")
+
+            activeWars.forEach { (warId, warInfo) ->
+                val (country1, country2) = warInfo
+                val duration = WarManager.getWarDuration(country1, country2)
+                val formattedDuration = WarManager.formatWarDuration(duration)
+
+                sender.sendInfo("§c战争: §e${country1.name} §cvs §e${country2.name}")
+                sender.sendInfo("  §7持续时间: §f$formattedDuration")
+                sender.sendInfo("  §7战争ID: §8$warId")
+            }
+
+            sender.sendInfo("§6总计: §f${activeWars.size} §6场活跃战争")
+
+            // 记录GM操作
+            GMLogger.logGMAction(sender, "WAR_INFO", null, mapOf(
+                "active_wars_count" to activeWars.size
+            ))
+
+        } catch (e: Exception) {
+            sender.sendError("查看战争信息时发生错误: ${e.message}")
+            e.printStackTrace()
+        }
+    }
+
+    /**
+     * GM护盾激活命令（绕过时间限制）
+     * /gzgm shield <国家> <小时>
+     */
+    private fun handleShield(sender: CommandSender, args: Array<out String>) {
+        if (!sender.hasPermission("guozhan.admin.shield")) {
+            sender.sendError("你没有权限使用护盾管理命令")
+            return
+        }
+
+        if (args.size < 3) {
+            sender.sendError("用法: /gzgm shield <国家> <小时>")
+            return
+        }
+
+        val countryName = args[1]
+        val hoursStr = args[2]
+
+        val country = CountryManager.getByName(countryName)
+        if (country == null) {
+            sender.sendError("国家 $countryName 不存在")
+            return
+        }
+
+        val hours = try {
+            hoursStr.toInt()
+        } catch (e: NumberFormatException) {
+            sender.sendError("无效的小时数: $hoursStr")
+            return
+        }
+
+        if (hours <= 0 || hours > 72) {
+            sender.sendError("护盾时长必须在 1-72 小时之间")
+            return
+        }
+
+        try {
+            // GM模式：绕过时间限制激活护盾
+            val success = ShieldManager.activateShield(country, hours, gmMode = true)
+
+            if (success) {
+                sender.sendSuccess("§c[GM模式] §f已为国家 §e${country.name} §f强制激活护盾，持续 §e$hours §f小时")
+
+                // 记录GM操作
+                GMLogger.logGMAction(sender, "ACTIVATE_SHIELD", null, mapOf(
+                    "country" to country.name,
+                    "hours" to hours,
+                    "bypass_time_limit" to true
+                ))
+            } else {
+                sender.sendError("激活护盾失败，请检查国家状态和资源")
+            }
+
+        } catch (e: Exception) {
+            sender.sendError("激活护盾时发生错误: ${e.message}")
+            e.printStackTrace()
         }
     }
 }

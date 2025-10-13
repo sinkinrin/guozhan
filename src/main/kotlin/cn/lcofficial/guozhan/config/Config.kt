@@ -24,10 +24,20 @@ object Config : Configuration("config.yml") {
         var maxNameLength by int("country.max-name-length", 12)
         var minNameLength by int("country.min-name-length", 3)
         var coreHealthMax by int("country.core-health-max", 1000)
+        var coreHealthInitial by int("country.core-health-initial", 50)
         var coreRegenInterval by int("country.core-regen-interval", 60)
         var coreRegenAmount by int("country.core-regen-amount", 1)
 
+        internal object CoreProtection : StaticLazy {
+            var offlineProtection by bool("country.core-protection.offline-protection", true)
+            var minOnlineMembers by int("country.core-protection.min-online-members", 1)
+            var requireWarDeclaration by bool("country.core-protection.require-war-declaration", true)
+            var offlineAttackDamageReduction by double("country.core-protection.offline-attack-damage-reduction", 0.5)
+        }
+
         object Creation : StaticLazy {
+            var minDistanceBetweenCountries by int("country.creation.min-distance-between-countries", 50)
+
             object ItemCost : StaticLazy {
                 private var materialString by string("country.creation.item_cost.material", "IRON_INGOT")
                 var amount by int("country.creation.item_cost.amount", 64)
@@ -116,6 +126,7 @@ object Config : Configuration("config.yml") {
         Country.init()
         Country.Creation.init()
         Country.Creation.ItemCost.init()
+        Country.CoreProtection.init()
         BossBar.init()
         RandomSpawn.init()
         Technology.init()

@@ -159,7 +159,11 @@ class Guozhan : JavaPlugin() {
         // 初始化核心管理器
         pluginLogger.info("正在初始化核心管理器...")
         cn.lcofficial.guozhan.manager.CoreManager.initialize()
-        
+
+        // 初始化经济BossBar管理器
+        pluginLogger.info("正在初始化经济BossBar管理器...")
+        cn.lcofficial.guozhan.manager.EconomyBossBarManager.initialize()
+
         // 初始化聊天管理器
         pluginLogger.info("正在初始化聊天管理器...")
         cn.lcofficial.guozhan.manager.ChatManager.initialize()

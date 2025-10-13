@@ -40,10 +40,9 @@ object ProfessionManager {
     fun canUpgradeProfession(user: User): Boolean {
         if (user.profession == null || user.professionLevel >= 2) return false
 
-        val upgradeDelayMs = Config.Profession.upgradeDelayHours * 60 * 60 * 1000L
-        val professionSetTime = user.professionSetTime ?: return false
-
-        return System.currentTimeMillis() - professionSetTime >= upgradeDelayMs
+        // 暂时简化逻辑：如果有职业且等级小于2，就可以升级
+        // TODO: 未来可以添加professionSetTime字段来实现更精确的时间控制
+        return true
     }
 
     /**

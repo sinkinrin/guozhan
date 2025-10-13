@@ -72,9 +72,10 @@ object ShieldManager {
      * 检查国家是否可以激活护盾
      * @param country 国家
      * @param hours 护盾持续小时数
+     * @param gmMode GM模式，绕过时间限制
      * @return 检查结果，包含是否可以激活和错误信息
      */
-    fun canActivateShield(country: Country, hours: Int): ShieldCheckResult {
+    fun canActivateShield(country: Country, hours: Int, gmMode: Boolean = false): ShieldCheckResult {
         // 0. 检查护盾时长参数（v1.3.15修复：从配置读取限制）
         val minHours = Config.Shield.minDurationHours
         val maxHours = Config.Shield.maxDurationHours
@@ -105,10 +106,12 @@ object ShieldManager {
             return aspectRatioResult
         }
         
-        // 5. 检查王战时间段
-        val warTimeResult = checkWarTime()
-        if (!warTimeResult.canActivate) {
-            return warTimeResult
+        // 5. 检查王战时间段（GM模式跳过）
+        if (!gmMode) {
+            val warTimeResult = checkWarTime()
+            if (!warTimeResult.canActivate) {
+                return warTimeResult
+            }
         }
         
         // 6. 检查资源是否足够
@@ -124,10 +127,11 @@ object ShieldManager {
      * 激活国家护盾
      * @param country 国家
      * @param hours 护盾持续小时数
+     * @param gmMode GM模式，绕过时间限制
      * @return 是否成功激活
      */
-    fun activateShield(country: Country, hours: Int): Boolean {
-        val checkResult = canActivateShield(country, hours)
+    fun activateShield(country: Country, hours: Int, gmMode: Boolean = false): Boolean {
+        val checkResult = canActivateShield(country, hours, gmMode)
         if (!checkResult.canActivate) {
             return false
         }
@@ -152,9 +156,10 @@ object ShieldManager {
         country.save()
         
         // 广播护盾激活消息
-        broadcastShieldActivation(country, hours)
-        
-        Guozhan.instance.logger.info("国家 ${country.name} 激活了护盾，持续 $hours 小时，消耗 $cost 金币")
+        broadcastShieldActivation(country, hours, gmMode)
+
+        val modeText = if (gmMode) "[GM模式] " else ""
+        Guozhan.instance.logger.info("${modeText}国家 ${country.name} 激活了护盾，持续 $hours 小时，消耗 $cost 金币")
         
         return true
     }
@@ -333,8 +338,9 @@ object ShieldManager {
     /**
      * 广播护盾激活消息
      */
-    private fun broadcastShieldActivation(country: Country, hours: Int) {
-        val message = "§6[护盾系统] §e国家 §f${country.name} §e激活了护盾，持续 §f$hours §e小时！"
+    private fun broadcastShieldActivation(country: Country, hours: Int, gmMode: Boolean = false) {
+        val modePrefix = if (gmMode) "§c[GM模式] " else ""
+        val message = "${modePrefix}§6[护盾系统] §e国家 §f${country.name} §e激活了护盾，持续 §f$hours §e小时！"
         Bukkit.broadcastMessage(message)
 
         // 通知国家成员

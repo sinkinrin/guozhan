@@ -46,7 +46,7 @@ object TerritoryManager {
             UUID.randomUUID(), x, z, world, 100, null, 
             ResourceType.NONE, 0, 0, 
             System.currentTimeMillis(), isCapital, 
-            if (isCapital) 1000 else 0, // 新建核心初始生命值为1000，普通区块为0
+            if (isCapital) cn.lcofficial.guozhan.config.Config.Country.coreHealthInitial else 0, // 新建核心使用配置的初始血量，普通区块为0
             System.currentTimeMillis()
         )
         if (territories.values.any { it == territory }) throw TerritoryAlreadyExistsException(x, z, world)
