@@ -757,9 +757,15 @@ object GuozhanCommand : TabExecutor {
             }
 
             "disband" -> {
-                if (sender.hasPermission("guozhan.command.disband")) {
-                    disbandCountry(sender)
-                } else sender.sendMessage(Message.NoPermission.mini())
+                if (args.size >= 2 && args[1] == "confirm") {
+                    if (sender.hasPermission("guozhan.command.disband")) {
+                        confirmDisbandCountry(sender)
+                    } else sender.sendMessage(Message.NoPermission.mini())
+                } else {
+                    if (sender.hasPermission("guozhan.command.disband")) {
+                        disbandCountry(sender)
+                    } else sender.sendMessage(Message.NoPermission.mini())
+                }
             }
 
             "promote" -> {
@@ -1991,7 +1997,7 @@ object GuozhanCommand : TabExecutor {
     }
 
     /**
-     * 解散国家
+     * 解散国家（第一步：显示警告和确认信息）
      */
     private fun disbandCountry(sender: CommandSender) {
         if (sender !is Player) {
@@ -2001,23 +2007,152 @@ object GuozhanCommand : TabExecutor {
 
         val user = sender.user()
         if (user.country == null) {
-            sender.sendMessage("§c你不属于任何国家！")
+            sender.sendError("你不属于任何国家！")
             return
         }
 
         if (user.rank.value < 3) { // 只有君主才能解散国家
-            sender.sendMessage("§c只有君主才能解散国家！")
+            sender.sendError("只有君主才能解散国家！")
+            return
+        }
+
+        // 检查冷却时间
+        if (!CooldownManager.canExecute(sender, CooldownManager.CooldownType.DISBAND)) {
             return
         }
 
         val country = user.country!!
 
-        // 确认操作
-        sender.sendMessage("§c§l警告：此操作将永久解散国家 '${country.name}'！")
-        sender.sendMessage("§e请在30秒内再次输入 '/u disband' 确认操作")
+        // 设置确认状态
+        val playerConfirmations = pendingConfirmations.computeIfAbsent(sender.uniqueId) { ConcurrentHashMap() }
+        playerConfirmations["disband"] = country.name
 
-        // 这里需要实现确认机制，暂时简化
-        sender.sendMessage("§a国家解散功能正在开发中...")
+        // 显示警告信息
+        sender.sendMessage("§c§l=== 解散国家警告 ===")
+        sender.sendMessage("§c§l警告：此操作将永久解散国家 '${country.name}'！")
+        sender.sendMessage("§c这将导致：")
+        sender.sendMessage("§c• 所有国家成员失去国籍")
+        sender.sendMessage("§c• 所有领土被释放")
+        sender.sendMessage("§c• 国库资源全部丢失")
+        sender.sendMessage("§c• 国家数据永久删除")
+        sender.sendMessage("§e")
+        sender.sendMessage("§e请在30秒内输入 §f/u disband confirm §e来确认解散")
+        sender.sendMessage("§7如果不想解散，请忽略此消息")
+
+        // 30秒后自动清除确认状态
+        Guozhan.instance.server.globalRegionScheduler.runDelayed(Guozhan.instance, { _ ->
+            val confirmations = pendingConfirmations[sender.uniqueId]
+            if (confirmations?.remove("disband") != null) {
+                if (confirmations.isEmpty()) {
+                    pendingConfirmations.remove(sender.uniqueId)
+                }
+                if (sender.isOnline) {
+                    sender.sendInfo("§7解散确认已超时取消")
+                }
+            }
+        }, 20 * 30) // 30秒
+    }
+
+    /**
+     * 确认解散国家（第二步：执行解散操作）
+     */
+    private fun confirmDisbandCountry(sender: CommandSender) {
+        if (sender !is Player) {
+            sender.sendMessage(Message.OnlyPlayer.mini())
+            return
+        }
+
+        val user = sender.user()
+        if (user.country == null) {
+            sender.sendError("你不属于任何国家！")
+            return
+        }
+
+        if (user.rank.value < 3) {
+            sender.sendError("只有君主才能解散国家！")
+            return
+        }
+
+        // 检查确认状态
+        val playerConfirmations = pendingConfirmations[sender.uniqueId]
+        val countryName = playerConfirmations?.get("disband")
+        if (countryName == null) {
+            sender.sendError("没有待确认的解散操作！请先使用 /u disband")
+            return
+        }
+
+        val country = user.country!!
+        if (country.name != countryName) {
+            sender.sendError("确认信息不匹配！请重新使用 /u disband")
+            playerConfirmations.remove("disband")
+            return
+        }
+
+        try {
+            transaction {
+                // 执行解散操作
+                executeDisbandCountry(country, sender)
+
+                // 清除确认状态
+                playerConfirmations.remove("disband")
+                if (playerConfirmations.isEmpty()) {
+                    pendingConfirmations.remove(sender.uniqueId)
+                }
+
+                // 设置冷却时间
+                CooldownManager.setCooldown(sender, CooldownManager.CooldownType.DISBAND)
+            }
+        } catch (e: Exception) {
+            sender.sendError("解散国家时发生错误: ${e.message}")
+            Guozhan.instance.logger.warning("解散国家失败: ${e.message}")
+        }
+    }
+
+    /**
+     * 执行解散国家的具体操作
+     */
+    private fun executeDisbandCountry(country: Country, disbander: Player) {
+        val countryName = country.name
+        val memberCount = country.members.size
+
+        // 1. 通知所有国家成员
+        val members = country.members.toList() // 创建副本避免并发修改
+        members.forEach { member ->
+            val player = Bukkit.getPlayer(member.uniqueId)
+            if (player != null && player.isOnline) {
+                player.sendMessage("§c§l国家 '${countryName}' 已被君主解散！")
+                player.sendMessage("§e你现在是自由民，可以加入其他国家或创建新国家")
+            }
+        }
+
+        // 2. 清除所有成员的国家关联
+        members.forEach { member ->
+            member.country = null
+            member.rank = Rank.DEFAULT
+            member.title = "国民"
+            member.save()
+        }
+
+        // 3. 释放所有领土
+        val territories = TerritoryManager.getTerritoriesByCountry(country)
+        territories.forEach { territory ->
+            territory.owner = null
+            territory.loyalty = 0
+            territory.save()
+        }
+
+        // 4. 删除国家数据
+        CountryManager.deleteCountry(country)
+
+        // 5. 全服广播
+        Bukkit.broadcastMessage("§c§l[国战] 国家 '${countryName}' 已被解散！")
+        Bukkit.broadcastMessage("§e该国家的 ${memberCount} 名成员现在是自由民")
+        Bukkit.broadcastMessage("§e该国家的 ${territories.size} 块领土已被释放")
+
+        // 6. 服务器日志
+        Guozhan.instance.logger.info("[解散国家] ${disbander.name} 解散了国家 '${countryName}'，释放了 ${territories.size} 块领土，影响 ${memberCount} 名玩家")
+
+        disbander.sendSuccess("国家 '${countryName}' 已成功解散！")
     }
 
     /**

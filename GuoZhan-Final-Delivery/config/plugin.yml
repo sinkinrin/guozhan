@@ -4,6 +4,9 @@ version: ${version}
 folia-supported: true
 prefix: '国战'
 api-version: 1.21
+# 软依赖：这些插件是可选的，不安装不影响核心功能
+# ProtocolLib: 协议增强功能（当前版本未使用，为未来功能预留）
+# PlaceholderAPI: 提供占位符变量支持，用于其他插件集成
 softdepend:
   - ProtocolLib
   - PlaceholderAPI

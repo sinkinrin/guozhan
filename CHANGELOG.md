@@ -5,6 +5,50 @@ All notable changes to the GuoZhan (国战) plugin will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.3.20] - 2025-10-09
+
+### 🔧 配置架构统一化和功能完善
+
+#### 配置系统重构
+- **新增**: 在 `Config.kt` 中添加缺失的配置对象：Shield、Profession、Tax、War、Territory
+- **修复**: 统一使用类型安全的配置委托模式，替换原始的 `getInt()`/`getString()` 调用
+- **改进**: ShieldManager 现在使用 `Config.Shield.*` 配置委托，提升类型安全性
+- **新增**: 添加缺失的 `shield.max-aspect-ratio` 配置项读取支持
+
+#### 职业系统配置化
+- **修复**: ProfessionManager 不再使用硬编码值，改为从 `config.yml` 读取配置
+- **新增**: 支持配置化的职业解锁延迟、升级延迟和升级成本
+- **新增**: 添加 `canSetProfession()` 和 `canUpgradeProfession()` 方法
+
+#### 解散国家功能完整实现
+- **新增**: 完整实现 `/u disband` 命令，包含两步确认机制
+- **新增**: 30秒确认超时机制，防止误操作
+- **新增**: 完整的数据清理：成员国籍清除、领土释放、国家数据删除
+- **新增**: 全服广播通知和详细的服务器日志记录
+- **新增**: CountryManager.deleteCountry() 方法，支持安全的国家删除
+
+#### 文档一致性修正
+- **更新**: USER_GUIDE.md 中建国成本描述，说明配置化特性
+- **新增**: CONFIGURATION.md 中详细的 Shield、Profession、Tax、War 配置说明
+- **新增**: 添加配置项的详细解释和使用场景说明
+- **新增**: 标注哪些配置需要重启服务器生效
+
+#### 依赖说明完善
+- **新增**: README.md 中完整的依赖要求章节，包含必需/可选/推荐依赖
+- **新增**: INSTALLATION.md 中 LuckPerms 权限配置详细说明
+- **新增**: SQLite vs MySQL 选择指南和使用场景对比
+- **更新**: plugin.yml 中 softdepend 的详细注释说明
+
+### 🛠️ 技术改进
+- **类型安全**: 所有配置读取统一使用类型安全的委托模式
+- **错误处理**: 改进配置读取的错误处理和默认值设置
+- **代码一致性**: 统一配置架构，提升代码维护性
+
+### 📚 文档改进
+- **完整性**: 补充所有缺失的配置项说明
+- **准确性**: 修正文档与实际实现的不一致之处
+- **实用性**: 添加配置选择指南和最佳实践建议
+
 ## [v1.3.19] - 2025-10-09
 
 ### 🚨 三个关键Bug修复

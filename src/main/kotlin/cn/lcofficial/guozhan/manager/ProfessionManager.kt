@@ -1,5 +1,6 @@
 package cn.lcofficial.guozhan.manager
 
+import cn.lcofficial.guozhan.config.Config
 import cn.lcofficial.guozhan.data.Profession
 import cn.lcofficial.guozhan.data.User
 import org.bukkit.Bukkit
@@ -17,6 +18,41 @@ object ProfessionManager {
         Profession.PRIEST to PotionEffectType.REGENERATION,
         Profession.CONQUEROR to null // 特殊处理
     )
+
+    /**
+     * 检查玩家是否可以设置职业
+     * @param user 用户
+     * @return 是否可以设置
+     */
+    fun canSetProfession(user: User): Boolean {
+        val country = user.country ?: return false
+        val unlockDelayMs = Config.Profession.unlockDelayHours * 60 * 60 * 1000L
+        val countryCreateTime = country.createTime ?: return false
+
+        return System.currentTimeMillis() - countryCreateTime >= unlockDelayMs
+    }
+
+    /**
+     * 检查玩家是否可以升级职业
+     * @param user 用户
+     * @return 是否可以升级
+     */
+    fun canUpgradeProfession(user: User): Boolean {
+        if (user.profession == null || user.professionLevel >= 2) return false
+
+        val upgradeDelayMs = Config.Profession.upgradeDelayHours * 60 * 60 * 1000L
+        val professionSetTime = user.professionSetTime ?: return false
+
+        return System.currentTimeMillis() - professionSetTime >= upgradeDelayMs
+    }
+
+    /**
+     * 获取职业升级成本
+     * @return 升级成本（钻石数量）
+     */
+    fun getUpgradeCost(): Int {
+        return Config.Profession.upgradeCost
+    }
     
     fun setProfession(user: User, profession: Profession) {
         user.profession = profession

@@ -1,6 +1,7 @@
 package cn.lcofficial.guozhan.manager
 
 import cn.lcofficial.guozhan.Guozhan
+import cn.lcofficial.guozhan.config.Config
 import cn.lcofficial.guozhan.data.Country
 import cn.lcofficial.guozhan.data.Countries
 import cn.lcofficial.guozhan.data.User
@@ -29,38 +30,42 @@ object ShieldManager {
      * 获取护盾冷却时间（毫秒）
      */
     private fun getShieldCooldownTime(): Long {
-        val minutes = Guozhan.instance.config.getInt("shield.cooldown-minutes", 30)
-        return minutes * 60 * 1000L
+        return Config.Shield.cooldownMinutes * 60 * 1000L
     }
 
     /**
      * 获取护盾最大持续时间（毫秒）
      */
     private fun getMaxShieldDuration(): Long {
-        val hours = Guozhan.instance.config.getInt("shield.max-duration-hours", 24)
-        return hours * 60 * 60 * 1000L
+        return Config.Shield.maxDurationHours * 60 * 60 * 1000L
     }
 
     /**
      * 获取护盾最小持续时间（毫秒）
      */
     private fun getMinShieldDuration(): Long {
-        val hours = Guozhan.instance.config.getInt("shield.min-duration-hours", 1)
-        return hours * 60 * 60 * 1000L
+        return Config.Shield.minDurationHours * 60 * 60 * 1000L
     }
 
     /**
      * 获取护盾成本倍数
      */
     private fun getShieldCostMultiplier(): Int {
-        return Guozhan.instance.config.getInt("shield.cost-per-hour", 5)
+        return Config.Shield.costPerHour
     }
 
     /**
      * 获取钻石到金币的转换率
      */
     private fun getDiamondToGoldRate(): Int {
-        return Guozhan.instance.config.getInt("shield.diamond-to-gold-rate", 10)
+        return Config.Shield.diamondToGoldRate
+    }
+
+    /**
+     * 获取最大长宽比
+     */
+    private fun getMaxAspectRatio(): Double {
+        return Config.Shield.maxAspectRatio
     }
     
     /**
@@ -71,8 +76,8 @@ object ShieldManager {
      */
     fun canActivateShield(country: Country, hours: Int): ShieldCheckResult {
         // 0. 检查护盾时长参数（v1.3.15修复：从配置读取限制）
-        val minHours = Guozhan.instance.config.getInt("shield.min-duration-hours", 1)
-        val maxHours = Guozhan.instance.config.getInt("shield.max-duration-hours", 24)
+        val minHours = Config.Shield.minDurationHours
+        val maxHours = Config.Shield.maxDurationHours
         if (hours < minHours || hours > maxHours) {
             return ShieldCheckResult(false, "护盾时长必须在 $minHours-$maxHours 小时之间！")
         }
@@ -261,9 +266,10 @@ object ShieldManager {
         val width = maxX - minX + 1
         val height = maxZ - minZ + 1
         val aspectRatio = Math.max(width, height).toDouble() / Math.min(width, height).toDouble()
-        
-        if (aspectRatio > 2.0) {
-            return ShieldCheckResult(false, "领土长宽比过大（${String.format("%.1f", aspectRatio)}:1 > 2:1），无法激活护盾")
+        val maxAspectRatio = getMaxAspectRatio()
+
+        if (aspectRatio > maxAspectRatio) {
+            return ShieldCheckResult(false, "领土长宽比过大（${String.format("%.1f", aspectRatio)}:1 > ${String.format("%.1f", maxAspectRatio)}:1），无法激活护盾")
         }
         
         return ShieldCheckResult(true, "领土长宽比检查通过")

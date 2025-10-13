@@ -71,6 +71,45 @@ object Config : Configuration("config.yml") {
         var progressNotificationInterval by int("technology.progress_notification_interval", 3600)
     }
 
+    internal object Shield : StaticLazy {
+        var costPerHour by int("shield.cost-per-hour", 5)
+        var cooldownMinutes by int("shield.cooldown-minutes", 30)
+        var maxDurationHours by int("shield.max-duration-hours", 24)
+        var minDurationHours by int("shield.min-duration-hours", 1)
+        var maxAspectRatio by double("shield.max-aspect-ratio", 2.0)
+        var diamondToGoldRate by int("shield.diamond-to-gold-rate", 10)
+    }
+
+    internal object Profession : StaticLazy {
+        var unlockDelayHours by int("profession.unlock-delay-hours", 2)
+        var upgradeDelayHours by int("profession.upgrade-delay-hours", 24)
+        var upgradeCost by int("profession.upgrade-cost", 50)
+    }
+
+    internal object Tax : StaticLazy {
+        var baseRate by double("tax.base-rate", 0.1)
+        var maxRate by double("tax.max-rate", 0.5)
+        var collectionInterval by int("tax.collection-interval", 3600)
+        var regions by stringList("tax.regions", listOf("spawn", "inner", "middle", "outer", "border", "wilderness"))
+    }
+
+    internal object War : StaticLazy {
+        var startTime by string("war.start-time", "19:20")
+        var endTime by string("war.end-time", "22:00")
+        var dayOfWeek by int("war.day-of-week", 6) // 6 = Saturday
+        var preparationMinutes by int("war.preparation-minutes", 20)
+        var damageMultiplier by double("war.damage-multiplier", 1.5)
+        var killReward by int("war.kill-reward", 10)
+    }
+
+    internal object Territory : StaticLazy {
+        var claimCost by int("territory.claim-cost", 3)
+        var maxClaims by int("territory.max-claims", 100)
+        var loyaltyDecayRate by double("territory.loyalty-decay-rate", 0.1)
+        var loyaltyDecayInterval by int("territory.loyalty-decay-interval", 3600)
+        var adjacencyRequired by bool("territory.adjacency-required", true)
+    }
+
     override fun init(plugin: Guozhan) {
         Database.init()
         World.init()
@@ -80,6 +119,11 @@ object Config : Configuration("config.yml") {
         BossBar.init()
         RandomSpawn.init()
         Technology.init()
+        Shield.init()
+        Profession.init()
+        Tax.init()
+        War.init()
+        Territory.init()
         super.init(plugin)
     }
 }

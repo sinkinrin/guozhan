@@ -12,6 +12,7 @@ import cn.lcofficial.guozhan.manager.UserManager.user
 import cn.lcofficial.guozhan.pluginLogger
 import org.bukkit.entity.Player
 import org.jetbrains.exposed.dao.id.EntityID
+import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
@@ -243,6 +244,32 @@ object CountryManager {
     fun totalPages(pageSize: Int): Long = transaction {
         val count = Countries.selectAll().count()
         if (count == 0L) 0L else (count + pageSize - 1) / pageSize // 向上取整
+    }
+
+    /**
+     * 删除国家
+     * @param country 要删除的国家
+     */
+    fun deleteCountry(country: Country) = transaction {
+        try {
+            // 1. 删除国家相关的所有数据
+            // 注意：由于外键约束，需要按照依赖关系的逆序删除
+
+            // 删除国家的所有城市
+            Cities.deleteWhere { Cities.owner eq country.id.toString() }
+
+            // 删除国家记录
+            Countries.deleteWhere { Countries.id eq country.id.toString() }
+
+            // 从内存缓存中移除
+            countries.remove(country.id)
+
+            pluginLogger.info("[删除国家] 国家 '${country.name}' (ID: ${country.id}) 已从数据库中删除")
+
+        } catch (e: Exception) {
+            pluginLogger.severe("[删除国家] 删除国家 '${country.name}' 时发生错误: ${e.message}")
+            throw e
+        }
     }
 
 }

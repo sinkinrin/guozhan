@@ -47,6 +47,25 @@
 
 ### 第三步：配置数据库
 
+#### 数据库选择指南
+
+**SQLite vs MySQL 对比**：
+
+| 特性 | SQLite | MySQL |
+|------|--------|-------|
+| **适用场景** | 测试环境、小型服务器 | 生产环境、大型服务器 |
+| **玩家数量** | < 50人 | 50+ 人 |
+| **性能** | 轻量级，单文件 | 高性能，支持并发 |
+| **维护难度** | 无需维护 | 需要数据库管理 |
+| **备份** | 复制单个文件 | 需要专业备份工具 |
+| **扩展性** | 有限 | 优秀 |
+
+**推荐选择**：
+- 🧪 **测试/开发环境**: 使用SQLite，简单快速
+- 🏭 **生产环境**: 使用MySQL，稳定可靠
+- 👥 **小型服务器** (< 20人): SQLite足够
+- 🏢 **大型服务器** (50+ 人): 必须使用MySQL
+
 #### 选项A：MySQL配置（推荐生产环境）
 
 1. **创建数据库**
@@ -77,11 +96,27 @@
 
 #### 选项B：SQLite配置（适合测试环境）
 
-编辑 `plugins/GuoZhan/config.yml`:
-```yaml
-database:
-  type: "sqlite"
-```
+SQLite是一个轻量级的数据库，无需额外安装和配置。
+
+1. **配置SQLite**
+   编辑 `plugins/GuoZhan/config.yml`:
+   ```yaml
+   database:
+     type: "sqlite"
+     # SQLite会自动在plugins/GuoZhan/目录下创建guozhan.db文件
+   ```
+
+2. **SQLite特点**
+   - ✅ **优点**: 零配置、轻量级、单文件存储
+   - ✅ **适合**: 测试环境、小型服务器、开发调试
+   - ⚠️ **限制**: 并发性能有限、不适合大型服务器
+   - 📁 **数据文件**: `plugins/GuoZhan/guozhan.db`
+
+3. **备份SQLite数据**
+   ```bash
+   # 简单复制数据库文件即可
+   cp plugins/GuoZhan/guozhan.db backup/guozhan_backup_$(date +%Y%m%d).db
+   ```
 
 ### 第四步：配置插件设置
 
@@ -116,23 +151,49 @@ database:
 
 ### 第五步：权限配置
 
-#### 使用LuckPerms（推荐）
+#### 使用LuckPerms（强烈推荐）
+
+LuckPerms是现代化的权限管理插件，提供强大的权限管理功能。
 
 1. **安装LuckPerms插件**
+   - 下载地址：https://luckperms.net/download
+   - 将LuckPerms.jar放入plugins文件夹
+   - 重启服务器
+
 2. **创建权限组**
    ```bash
-   # 基础玩家权限
+   # 基础玩家权限组
    /lp creategroup player
    /lp group player permission set guozhan.command.create true
    /lp group player permission set guozhan.command.info true
    /lp group player permission set guozhan.command.list true
    /lp group player permission set guozhan.command.claim true
+   /lp group player permission set guozhan.command.unclaim true
    /lp group player permission set guozhan.command.contribute true
-   
-   # 管理员权限
+   /lp group player permission set guozhan.command.invite true
+   /lp group player permission set guozhan.command.accept true
+   /lp group player permission set guozhan.command.decline true
+   /lp group player permission set guozhan.command.leave true
+   /lp group player permission set guozhan.command.map true
+   /lp group player permission set guozhan.command.treasury true
+   /lp group player permission set guozhan.command.shield true
+   /lp group player permission set guozhan.command.tech true
+
+   # 管理员权限组
    /lp creategroup admin
    /lp group admin permission set guozhan.admin.* true
+   /lp group admin permission set guozhan.admin.bypass.cooldown true
+   /lp group admin permission set guozhan.admin.bypass.cost true
+
+   # 设置默认组
+   /lp group default parent add player
    ```
+
+3. **权限节点说明**
+   - `guozhan.command.*`: 所有玩家命令权限
+   - `guozhan.admin.*`: 所有管理员权限
+   - `guozhan.admin.bypass.cooldown`: 绕过冷却时间
+   - `guozhan.admin.bypass.cost`: 绕过资源消耗
 
 #### 使用原生权限系统
 

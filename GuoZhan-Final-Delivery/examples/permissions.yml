@@ -1,0 +1,333 @@
+# GuoZhan 权限配置示例
+# 适用于不同权限插件的配置参考
+
+# ================================
+# LuckPerms 配置示例（推荐）
+# ================================
+
+# 1. 创建权限组
+# /lp creategroup default
+# /lp creategroup vip
+# /lp creategroup admin
+# /lp creategroup owner
+
+# 2. 基础玩家权限组 (default)
+default_permissions:
+  # 基础命令权限
+  - "guozhan.command.create"          # 创建国家
+  - "guozhan.command.info"            # 查看国家信息
+  - "guozhan.command.list"            # 查看国家列表
+  - "guozhan.command.help"            # 查看帮助
+  
+  # 国家成员权限
+  - "guozhan.command.accept"          # 接受邀请
+  - "guozhan.command.decline"         # 拒绝邀请
+  - "guozhan.command.leave"           # 离开国家
+  
+  # 基础交互权限
+  - "guozhan.command.contribute"      # 向国库贡献
+  - "guozhan.command.treasury"        # 查看国库
+  - "guozhan.command.map"             # 获取地图
+  
+  # 聊天权限
+  - "guozhan.chat.country"            # 国家聊天
+  - "guozhan.chat.global"             # 全服聊天
+  - "guozhan.chat.whisper"            # 私聊
+
+# LuckPerms 命令示例：
+# /lp group default permission set guozhan.command.create true
+# /lp group default permission set guozhan.command.info true
+# /lp group default permission set guozhan.command.list true
+
+# 3. VIP玩家权限组 (vip)
+vip_permissions:
+  # 继承基础权限
+  - "group.default"
+  
+  # VIP专属权限
+  - "guozhan.command.claim"           # 占领领土
+  - "guozhan.command.unclaim"         # 放弃领土
+  - "guozhan.command.claimmode"       # 切换占领模式
+  - "guozhan.command.harvest"         # 收获资源
+  - "guozhan.command.restore"         # 恢复忠诚度
+  
+  # 科技权限
+  - "guozhan.command.tech"            # 科技系统
+  
+  # 外交权限
+  - "guozhan.command.diplomacy"       # 外交关系
+
+# LuckPerms 命令示例：
+# /lp group vip parent add default
+# /lp group vip permission set guozhan.command.claim true
+
+# 4. 管理员权限组 (admin)
+admin_permissions:
+  # 继承VIP权限
+  - "group.vip"
+  
+  # 国家管理权限
+  - "guozhan.command.invite"          # 邀请成员
+  - "guozhan.command.kick"            # 驱逐成员
+  - "guozhan.command.promote"         # 提升成员
+  - "guozhan.command.demote"          # 降级成员
+  - "guozhan.command.title"           # 设置头衔
+  - "guozhan.command.rename"          # 重命名国家
+  - "guozhan.command.move"            # 迁移首都
+  
+  # 战争权限
+  - "guozhan.command.shield"          # 护盾系统
+  - "guozhan.command.war"             # 战争相关
+  
+  # 高级功能
+  - "guozhan.command.transfer"        # 转让君主（仅君主）
+
+# 5. 服务器管理员权限组 (owner)
+owner_permissions:
+  # 完整GM权限
+  - "guozhan.admin.*"                 # 所有管理员权限
+  
+  # 或者细分权限：
+  - "guozhan.admin.use"               # 基础GM命令
+  - "guozhan.admin.give"              # 物品给予
+  - "guozhan.admin.setcountry"        # 设置玩家国家
+  - "guozhan.admin.economy"           # 经济管理
+  - "guozhan.admin.territory"         # 领土管理
+  - "guozhan.admin.debug"             # 调试权限
+  - "guozhan.admin.reload"            # 重载权限
+  - "guozhan.admin.cleardata"         # 数据清理
+  - "guozhan.admin.setrank"           # 设置等级
+  - "guozhan.admin.cleardb"           # 数据库清空（危险）
+
+# ================================
+# 原生 Bukkit permissions.yml 配置
+# ================================
+
+bukkit_permissions_yml: |
+  # 在 permissions.yml 文件中的配置
+  
+  # 默认权限组
+  default:
+    default: true
+    permissions:
+      guozhan.command.create: true
+      guozhan.command.info: true
+      guozhan.command.list: true
+      guozhan.command.help: true
+      guozhan.command.accept: true
+      guozhan.command.decline: true
+      guozhan.command.leave: true
+      guozhan.command.contribute: true
+      guozhan.command.treasury: true
+      guozhan.command.map: true
+      guozhan.chat.country: true
+      guozhan.chat.global: true
+      guozhan.chat.whisper: true
+  
+  # VIP权限组
+  vip:
+    default: false
+    inheritance:
+      - default
+    permissions:
+      guozhan.command.claim: true
+      guozhan.command.unclaim: true
+      guozhan.command.claimmode: true
+      guozhan.command.harvest: true
+      guozhan.command.restore: true
+      guozhan.command.tech: true
+      guozhan.command.diplomacy: true
+  
+  # 管理员权限组
+  admin:
+    default: false
+    inheritance:
+      - vip
+    permissions:
+      guozhan.command.invite: true
+      guozhan.command.kick: true
+      guozhan.command.promote: true
+      guozhan.command.demote: true
+      guozhan.command.title: true
+      guozhan.command.rename: true
+      guozhan.command.move: true
+      guozhan.command.shield: true
+      guozhan.command.war: true
+      guozhan.command.transfer: true
+  
+  # 服务器管理员
+  owner:
+    default: false
+    inheritance:
+      - admin
+    permissions:
+      guozhan.admin.*: true
+
+# ================================
+# PermissionsEx (PEX) 配置示例
+# ================================
+
+pex_config: |
+  # 在 permissions.yml 中的配置
+  
+  groups:
+    default:
+      default: true
+      permissions:
+        - guozhan.command.create
+        - guozhan.command.info
+        - guozhan.command.list
+        - guozhan.command.help
+        - guozhan.command.accept
+        - guozhan.command.decline
+        - guozhan.command.leave
+        - guozhan.command.contribute
+        - guozhan.command.treasury
+        - guozhan.command.map
+        - guozhan.chat.*
+    
+    vip:
+      inheritance:
+        - default
+      permissions:
+        - guozhan.command.claim
+        - guozhan.command.unclaim
+        - guozhan.command.claimmode
+        - guozhan.command.harvest
+        - guozhan.command.restore
+        - guozhan.command.tech
+        - guozhan.command.diplomacy
+    
+    admin:
+      inheritance:
+        - vip
+      permissions:
+        - guozhan.command.invite
+        - guozhan.command.kick
+        - guozhan.command.promote
+        - guozhan.command.demote
+        - guozhan.command.title
+        - guozhan.command.rename
+        - guozhan.command.move
+        - guozhan.command.shield
+        - guozhan.command.war
+        - guozhan.command.transfer
+    
+    owner:
+      inheritance:
+        - admin
+      permissions:
+        - guozhan.admin.*
+
+# ================================
+# 权限节点详细说明
+# ================================
+
+permission_descriptions:
+  # 基础命令权限
+  "guozhan.command.create": "创建国家"
+  "guozhan.command.info": "查看国家信息"
+  "guozhan.command.list": "查看国家列表"
+  "guozhan.command.help": "查看帮助信息"
+  
+  # 成员管理权限
+  "guozhan.command.invite": "邀请玩家加入国家"
+  "guozhan.command.accept": "接受国家邀请"
+  "guozhan.command.decline": "拒绝国家邀请"
+  "guozhan.command.kick": "驱逐国家成员"
+  "guozhan.command.leave": "离开国家"
+  "guozhan.command.promote": "提升成员等级"
+  "guozhan.command.demote": "降低成员等级"
+  "guozhan.command.title": "设置成员头衔"
+  "guozhan.command.transfer": "转让君主之位"
+  
+  # 领土管理权限
+  "guozhan.command.claim": "占领领土"
+  "guozhan.command.unclaim": "放弃领土"
+  "guozhan.command.claimmode": "切换占领模式"
+  "guozhan.command.harvest": "收获领土资源"
+  "guozhan.command.restore": "恢复领土忠诚度"
+  "guozhan.command.map": "获取疆域地图"
+  
+  # 经济系统权限
+  "guozhan.command.contribute": "向国库贡献资源"
+  "guozhan.command.treasury": "查看国库状态"
+  
+  # 科技系统权限
+  "guozhan.command.tech": "科技研究和管理"
+  
+  # 外交战争权限
+  "guozhan.command.diplomacy": "管理外交关系"
+  "guozhan.command.shield": "护盾系统管理"
+  "guozhan.command.war": "战争相关功能"
+  
+  # 国家管理权限
+  "guozhan.command.rename": "重命名国家"
+  "guozhan.command.move": "迁移国家首都"
+  
+  # 聊天系统权限
+  "guozhan.chat.country": "国家内部聊天"
+  "guozhan.chat.global": "全服聊天"
+  "guozhan.chat.whisper": "私人聊天"
+  
+  # 管理员权限
+  "guozhan.admin.use": "使用GM基础命令"
+  "guozhan.admin.give": "给予玩家物品"
+  "guozhan.admin.setcountry": "设置玩家所属国家"
+  "guozhan.admin.economy": "管理经济系统"
+  "guozhan.admin.territory": "管理领土系统"
+  "guozhan.admin.debug": "调试功能"
+  "guozhan.admin.reload": "重载插件配置"
+  "guozhan.admin.cleardata": "清理数据"
+  "guozhan.admin.setrank": "设置玩家等级"
+  "guozhan.admin.cleardb": "清空数据库（危险）"
+
+# ================================
+# 推荐的权限分配策略
+# ================================
+
+recommended_strategy: |
+  1. 新玩家 (default组):
+     - 只给予基础查看和创建权限
+     - 可以接受邀请但不能邀请他人
+     - 可以贡献资源但不能管理
+  
+  2. 普通玩家 (vip组):
+     - 可以占领和管理领土
+     - 可以使用科技和外交系统
+     - 可以参与大部分游戏功能
+  
+  3. 国家管理者 (admin组):
+     - 可以邀请和管理成员
+     - 可以使用高级国家功能
+     - 可以进行战争和外交决策
+  
+  4. 服务器管理员 (owner组):
+     - 拥有所有GM权限
+     - 可以调试和维护系统
+     - 可以处理紧急情况
+
+# ================================
+# 安全建议
+# ================================
+
+security_recommendations: |
+  1. 权限最小化原则:
+     - 只给予必要的权限
+     - 定期审查权限分配
+     - 避免给予过多权限
+  
+  2. 敏感权限保护:
+     - guozhan.admin.cleardb 只给予最高管理员
+     - guozhan.admin.setrank 限制使用
+     - 定期检查管理员权限使用情况
+  
+  3. 权限继承:
+     - 使用权限组继承减少配置复杂度
+     - 确保权限层级清晰
+     - 避免权限冲突
+  
+  4. 监控和日志:
+     - 启用权限使用日志
+     - 监控敏感操作
+     - 定期备份权限配置

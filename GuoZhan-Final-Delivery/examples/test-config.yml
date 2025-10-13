@@ -1,0 +1,236 @@
+# GuoZhan 测试环境配置示例
+# 适用于开发和测试，注重快速测试和调试
+
+# 数据库配置 - 测试环境使用SQLite
+database:
+  type: "sqlite"
+  # SQLite 无需额外配置，会自动创建 guozhan.db 文件
+
+# 世界设置
+world:
+  name: "world"
+  spawn-radius: 1000       # 较小的保护区域便于测试
+  min-y: 64
+  max-y: 100
+
+# 国家设置 - 测试环境降低成本
+country:
+  max-name-length: 12
+  min-name-length: 3
+  creation:
+    item_cost:
+      material: "IRON_INGOT"
+      amount: 16            # 降低建国成本便于测试
+  core-health-max: 500      # 较低的核心血量便于测试战争
+  core-regen-interval: 30   # 更快的回复便于测试
+  core-regen-amount: 5
+
+# 领土设置
+territory:
+  max-loyalty: 100
+  loyalty-decay-interval: 120  # 更短的间隔便于测试忠诚度系统
+  loyalty-restore-cost: 0.1    # 更低的恢复成本
+
+# 王战设置 - 测试环境更频繁的战争
+war:
+  day: 1                    # 周一（可以设置为每天测试）
+  prepare-hour: 20
+  prepare-minute: 0
+  start-hour: 20
+  start-minute: 5           # 很短的准备时间
+  end-hour: 20
+  end-minute: 30            # 短时间战争便于测试
+  core-territory-range: [-32, 31]      # 较小的核心区域
+  war-territory-range: [-64, 63]       # 较小的战争区域
+
+# 科技设置 - 快速研究便于测试
+technology:
+  research_duration: 0                  # 瞬间完成研究
+  enable_progress_notifications: true
+  progress_notification_interval: 60   # 1分钟通知便于测试
+
+# 护盾设置 - 测试环境降低限制
+shield:
+  cost-per-hour: 1          # 很低的护盾成本
+  cooldown-minutes: 5       # 很短的冷却时间
+  max-duration-hours: 24
+  min-duration-hours: 1
+  max-aspect-ratio: 3.0     # 更宽松的长宽比限制
+  diamond-to-gold-rate: 5   # 更低的转换率
+
+# 职业设置 - 快速解锁便于测试
+profession:
+  unlock-delay-hours: 0.1   # 6分钟解锁
+  upgrade-delay-hours: 0.5  # 30分钟升级
+  upgrade-cost: 10          # 很低的升级成本
+
+# 税收设置 - 测试环境简化的税收区域
+tax:
+  regions:
+    "测试区域1":
+      range: 5000
+      gold-rate: 0.1        # 高税率便于测试经济系统
+      diamond-rate: 0.05
+    "测试区域2":
+      range: 2000
+      gold-rate: 0.2
+      diamond-rate: 0.1
+    "核心测试区":
+      range: 500
+      gold-rate: 0.5
+      diamond-rate: 0.3
+
+# BossBar 配置 - 测试环境高频更新
+bossbar:
+  enabled: true
+  display-range: 50         # 较小的显示范围
+  update-interval: 10       # 高频更新便于测试
+  title-format: "[测试] {country} 核心血量"
+  show-to-attacker-country: true
+  show-to-defender-country: true
+  cache-duration: 10        # 短缓存时间
+
+# 随机出生系统 - 测试环境快速出生
+random-spawn:
+  enabled: true
+  spawn-radius: 2000        # 较小的出生范围
+  max-attempts: 10          # 较少的尝试次数
+  safety-check-radius: 2
+  min-distance-from-spawn: 200  # 较近的最小距离
+  allowed-worlds:
+    - "world"
+  unsafe-blocks:
+    - "LAVA"
+    - "WATER"
+    - "FIRE"
+  min-y-level: 64
+  max-y-level: 100
+
+# 消息设置 - 测试环境标识
+messages:
+  prefix: "§e[测试-国战] §r"
+  no-permission: "§c[测试] 你没有权限执行此操作"
+  country-not-found: "§c[测试] 国家不存在"
+  player-not-found: "§c[测试] 玩家不存在"
+  not-in-country: "§c[测试] 你不在任何国家中"
+  not-owner: "§c[测试] 只有君主才能执行此操作"
+  not-admin: "§c[测试] 只有君主或大臣才能执行此操作"
+
+# 调试设置 - 测试环境启用详细调试
+debug:
+  enabled: true             # 启用调试模式
+  log-level: "DEBUG"        # 详细日志级别
+  performance-monitoring: true  # 性能监控
+  verbose-logging: true     # 详细日志
+  
+  # 测试专用功能
+  test-features:
+    instant-research: true          # 瞬间研究
+    free-operations: true           # 免费操作
+    unlimited-resources: false      # 无限资源（谨慎使用）
+    fast-loyalty-decay: true        # 快速忠诚度衰减测试
+
+# 性能设置 - 测试环境优化
+performance:
+  # 缓存设置 - 较小的缓存
+  cache:
+    territory-cache-size: 100
+    country-cache-size: 50
+    user-cache-size: 100
+    cache-expire-time: 60000        # 1分钟过期
+  
+  # 数据库优化
+  database:
+    batch-size: 10
+    query-timeout: 10
+    connection-test-query: "SELECT 1"
+  
+  # 任务调度 - 高频检查便于测试
+  scheduler:
+    loyalty-check-interval: 1200    # 1分钟检查
+    tax-collection-interval: 6000   # 5分钟收税
+    shield-check-interval: 1200     # 1分钟检查护盾
+
+# 测试专用设置
+testing:
+  # 自动化测试
+  automation:
+    auto-create-test-countries: false   # 自动创建测试国家
+    auto-assign-resources: false        # 自动分配资源
+    simulate-players: false             # 模拟玩家行为
+  
+  # 测试数据
+  test-data:
+    create-sample-countries: false      # 创建示例国家
+    populate-territories: false         # 填充领土数据
+    generate-test-users: false          # 生成测试用户
+  
+  # 快速重置
+  quick-reset:
+    enable-reset-command: true          # 启用快速重置命令
+    reset-on-startup: false             # 启动时重置数据
+    backup-before-reset: true           # 重置前备份
+
+# 安全设置 - 测试环境宽松限制
+security:
+  # 操作限制 - 测试环境放宽限制
+  limits:
+    max-countries-per-player: 3         # 允许多个国家便于测试
+    max-invites-per-hour: 20            # 更多邀请
+    max-claims-per-minute: 50           # 更多占领
+    max-chat-length: 500                # 更长聊天
+  
+  # 反作弊 - 测试环境禁用
+  anti-cheat:
+    enable-speed-check: false           # 禁用速度检查
+    enable-fly-check: false             # 禁用飞行检查
+    max-block-place-speed: 1000         # 很高的放置速度
+
+# 日志设置 - 测试环境详细日志
+logging:
+  level: "DEBUG"                        # 调试级别
+  file-logging: true
+  max-log-files: 5
+  log-rotation-size: "5MB"
+  
+  # 特定功能日志 - 全部启用
+  features:
+    gm-operations: true
+    economy-transactions: true
+    territory-changes: true
+    war-events: true
+    debug-events: true                  # 调试事件日志
+    performance-metrics: true           # 性能指标日志
+
+# 开发者工具
+developer:
+  # 热重载
+  hot-reload:
+    config-files: true                  # 配置文件热重载
+    message-files: true                 # 消息文件热重载
+    technology-files: true              # 科技文件热重载
+  
+  # 调试命令
+  debug-commands:
+    enable-dev-commands: true           # 启用开发命令
+    allow-direct-sql: false             # 允许直接SQL（危险）
+    enable-profiling: true              # 启用性能分析
+  
+  # 测试工具
+  test-tools:
+    mock-players: true                  # 模拟玩家工具
+    scenario-testing: true              # 场景测试工具
+    load-testing: false                 # 负载测试（谨慎使用）
+
+# 备份设置 - 测试环境简化备份
+backup:
+  auto-backup: false                    # 测试环境禁用自动备份
+  backup-interval: 3600                # 1小时备份（如果启用）
+  max-backup-files: 3
+  backup-path: "test-backups/"
+  
+  # 备份内容
+  include:
+    database: true
+    config: true
+    logs: true                          # 测试环境包含日志
