@@ -90,7 +90,9 @@ class WarEventScheduler {
         countries.forEach { country ->
             val coreTerritories = getCoreTerritories(country)
             val score = coreTerritories.size
-            warScores[country.id] = score
+            // 改为“累计积分”而不是覆盖：每次更新都在已有基础上累加
+            val current = warScores.getOrDefault(country.id, 0)
+            warScores[country.id] = current + score
         }
     }
     

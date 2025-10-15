@@ -217,31 +217,41 @@ object TerritoryListener : Listener {
             return
         }
 
-        // 检查资源消耗（3个铁锭）
+        // 检查资源消耗（3个铁锭），仅校验不扣除，完成时再扣
         if (!player.hasEnoughItem(Material.IRON_INGOT, 3)) {
             player.sendError("占领领土需要3个铁锭！")
             return
         }
 
-        // 扣除资源
-        player.takeItem(Material.IRON_INGOT, 3)
-
-        // 执行占领
-        territory.owner = user.country
-        territory.loyalty = 100
-        territory.save()
-
-        // 随机生成资源
-        TerritoryManager.generateRandomResource(territory)
-
-        // 发送成功消息
-        player.sendSuccess("成功占领了这块领土！")
-        if (territory.resourceType != ResourceType.NONE) {
-            player.sendInfo("这块领土上发现了${territory.resourceType}资源！")
+        // 启动计时占领流程
+        if (cn.lcofficial.guozhan.manager.ClaimManager.isTerritoryBeingClaimed(worldName, chunkX, chunkZ)) {
+            player.sendError("该领土正在被占领中，请稍后再试")
+            return
         }
+        cn.lcofficial.guozhan.manager.ClaimManager.startClaim(player, territory, user.country!!)
+        player.sendInfo("已开始占领，保持在该区块内，期间若被攻击或离开将会中断")
 
         player.sendInfo("继续手持木斧右键其他区块来占领更多领土")
         player.sendInfo("使用 /u claimmode 可以切换回自动模式")
+    }
+
+    @org.bukkit.event.EventHandler(ignoreCancelled = true)
+    fun onClaimPlayerDamaged(event: org.bukkit.event.entity.EntityDamageEvent) {
+        val player = event.entity as? org.bukkit.entity.Player ?: return
+        if (cn.lcofficial.guozhan.manager.ClaimManager.isClaiming(player)) {
+            cn.lcofficial.guozhan.manager.ClaimManager.cancelClaimByDamage(player)
+        }
+    }
+
+    @org.bukkit.event.EventHandler(ignoreCancelled = true)
+    fun onClaimPlayerMove(event: org.bukkit.event.player.PlayerMoveEvent) {
+        val player = event.player
+        if (!cn.lcofficial.guozhan.manager.ClaimManager.isClaiming(player)) return
+        val from = event.from.chunk
+        val to = event.to?.chunk ?: return
+        if (from.x != to.x || from.z != to.z || from.world.name != to.world.name) {
+            cn.lcofficial.guozhan.manager.ClaimManager.cancelClaimByMove(player)
+        }
     }
 
     private fun notifyPlayerIfNeeded(player: Player, message: String) {

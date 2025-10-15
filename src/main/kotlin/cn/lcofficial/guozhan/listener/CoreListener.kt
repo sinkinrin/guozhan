@@ -102,14 +102,9 @@ class CoreListener : Listener {
     fun onPlayerJoin(event: PlayerJoinEvent) {
         val player = event.player
         
-        // 检查是否需要传送到安全出生点
-        if (SpawnManager.shouldTeleportToSpawn(player)) {
-            // 延迟1秒执行传送，确保玩家完全加载
-            // 使用Folia的EntityScheduler进行玩家相关操作
-            player.scheduler.runDelayed(Guozhan.instance, {
-                SpawnManager.teleportToSafeSpawn(player)
-            }, null, 20L)
-        }
+        // 随机出生已由 RandomSpawnListener 处理，
+        // 无国籍玩家的死亡重生由 PlayerListener 处理。
+        // 此处不再触发随机出生以避免重复传送。
     }
     
     /**

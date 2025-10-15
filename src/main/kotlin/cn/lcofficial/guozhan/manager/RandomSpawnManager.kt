@@ -8,7 +8,12 @@ import org.bukkit.Location
 import org.bukkit.Material
 import org.bukkit.World
 import org.bukkit.entity.Player
+import org.bukkit.potion.PotionEffect
+import org.bukkit.potion.PotionEffectType
+import java.util.UUID
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ConcurrentHashMap
+import java.util.Collections
 import kotlin.random.Random
 
 /**
@@ -16,23 +21,44 @@ import kotlin.random.Random
  * 负责为新玩家寻找安全的随机出生点
  */
 object RandomSpawnManager {
-    
+
+    // 防抖：防止同一玩家在短时间内被重复随机传送
+    private val teleporting: MutableSet<UUID> = Collections.newSetFromMap(ConcurrentHashMap<UUID, Boolean>())
+    private val lastTeleportAt: MutableMap<UUID, Long> = ConcurrentHashMap()
+    private const val TELEPORT_COOLDOWN_MS: Long = 15_000
+
     /**
      * 为玩家寻找随机出生点并传送
      * @param player 需要传送的玩家
      * @return 是否成功找到并传送到安全位置
      */
     fun teleportPlayerToRandomSpawn(player: Player): CompletableFuture<Boolean> {
+        // 防抖：同一玩家15秒内仅允许一次随机出生传送
+        val now = System.currentTimeMillis()
+        val uuid = player.uniqueId
+        lastTeleportAt[uuid]?.let { last ->
+            if (now - last < TELEPORT_COOLDOWN_MS) {
+                pluginLogger.warning("[随机出生] 忽略重复请求：玩家 ${player.name} 在冷却期内 (${now - last}ms) ")
+                return CompletableFuture.completedFuture(true)
+            }
+        }
+        if (!teleporting.add(uuid)) {
+            pluginLogger.warning("[随机出生] 玩家 ${player.name} 已有随机出生进行中，忽略重复调用")
+            return CompletableFuture.completedFuture(true)
+        }
+
         if (!Config.RandomSpawn.enabled) {
             pluginLogger.info("随机出生系统已禁用，玩家 ${player.name} 将使用默认出生点")
+            teleporting.remove(uuid)
             return CompletableFuture.completedFuture(false)
         }
 
         val world = getValidWorld(player.world) ?: run {
             pluginLogger.info("无法为玩家 ${player.name} 找到有效的世界")
+            teleporting.remove(uuid)
             return CompletableFuture.completedFuture(false)
         }
-        
+
         return findRandomSpawnLocationAsync(world).thenApply { location ->
             if (location != null) {
                 // 使用Folia的RegionScheduler在正确的区域执行传送
@@ -42,13 +68,20 @@ object RandomSpawnManager {
                 regionScheduler.execute(Guozhan.instance, location) {
                     // 使用teleportAsync避免Folia线程检查错误
                     player.teleportAsync(location).thenAccept { success ->
-                        if (success) {
-                            // 给予短暂的摔落伤害保护
-                            giveFallDamageProtection(player)
-                            player.sendMessage("§a欢迎来到国战服务器！你已被传送到安全的出生点。")
-                            pluginLogger.info("玩家 ${player.name} 已传送到随机出生点: ${location.x}, ${location.y}, ${location.z}")
-                        } else {
-                            pluginLogger.severe("为玩家 ${player.name} 传送到随机出生点失败")
+                        try {
+                            if (success) {
+                                // 给予更长时间的摔落保护
+                                giveFallDamageProtection(player)
+                                // 记录落点地面方块，便于诊断
+                                val ground = location.clone().add(0.0, -1.0, 0.0).block.type
+                                player.sendMessage("§a欢迎来到国战服务器！你已被传送到安全的出生点。")
+                                pluginLogger.info("玩家 ${player.name} 已传送到随机出生点: ${location.x}, ${location.y}, ${location.z} | ground=${ground}")
+                            } else {
+                                pluginLogger.severe("为玩家 ${player.name} 传送到随机出生点失败")
+                            }
+                        } finally {
+                            lastTeleportAt[uuid] = System.currentTimeMillis()
+                            teleporting.remove(uuid)
                         }
                     }
                 }
@@ -62,11 +95,16 @@ object RandomSpawnManager {
                 regionScheduler.execute(Guozhan.instance, spawnLocation) {
                     // 使用teleportAsync避免Folia线程检查错误
                     player.teleportAsync(spawnLocation).thenAccept { success ->
-                        if (success) {
-                            player.sendMessage("§e无法找到合适的随机出生点，已传送到默认位置。")
-                            pluginLogger.warning("为玩家 ${player.name} 查找随机出生点失败，使用默认出生点")
-                        } else {
-                            pluginLogger.severe("为玩家 ${player.name} 传送到默认出生点失败")
+                        try {
+                            if (success) {
+                                player.sendMessage("§e无法找到合适的随机出生点，已传送到默认位置。")
+                                pluginLogger.warning("为玩家 ${player.name} 查找随机出生点失败，使用默认出生点")
+                            } else {
+                                pluginLogger.severe("为玩家 ${player.name} 传送到默认出生点失败")
+                            }
+                        } finally {
+                            lastTeleportAt[uuid] = System.currentTimeMillis()
+                            teleporting.remove(uuid)
                         }
                     }
                 }
@@ -91,15 +129,22 @@ object RandomSpawnManager {
                 val duration = System.currentTimeMillis() - startTime
                 pluginLogger.warning("随机出生点查找失败，耗时: ${duration}ms, 尝试次数: $attempts")
 
-                // 使用世界出生点作为回退，根据世界类型调整高度
-                val fallbackLocation = world.spawnLocation.clone().apply {
-                    y = if (isLikelyFlatWorld(world)) {
-                        8.0 // 平坦世界使用较低的安全高度
+                // 使用世界出生点作为回退
+                val worldSpawn = world.spawnLocation
+                val isFlat = isLikelyFlatWorld(world)
+
+                val fallbackLocation = worldSpawn.clone().apply {
+                    // 根据世界类型调整高度
+                    y = if (isFlat) {
+                        // 平坦世界：使用世界出生点的实际高度，确保在地面上
+                        maxOf(worldSpawn.y, 5.0)
                     } else {
-                        100.0 // 普通世界使用较高的安全高度
+                        // 普通世界：使用安全高度
+                        maxOf(worldSpawn.y, 70.0)
                     }
                 }
-                pluginLogger.warning("[随机出生] 使用回退机制: 世界出生点 (${fallbackLocation.blockX}, ${fallbackLocation.blockY}, ${fallbackLocation.blockZ})")
+
+                pluginLogger.warning("[随机出生] 使用回退机制: 世界出生点 (${worldSpawn.x}, ${worldSpawn.y}, ${worldSpawn.z}) -> 调整后 (${fallbackLocation.x}, ${fallbackLocation.y}, ${fallbackLocation.z}), 世界类型: ${if (isFlat) "平坦" else "普通"}")
                 future.complete(fallbackLocation)
                 return
             }
@@ -116,24 +161,45 @@ object RandomSpawnManager {
             val x = spawnLocation.x + distance * Math.cos(angle)
             val z = spawnLocation.z + distance * Math.sin(angle)
 
-            // 针对平坦世界优化高度计算
-            val safeY = if (world.name == "world" && isLikelyFlatWorld(world)) {
-                // 平坦世界的地面通常在Y=4-7之间，使用Y=8作为安全出生高度
-                8.0
-            } else {
-                // 普通世界使用配置的最小高度，但不低于70
-                Config.RandomSpawn.minYLevel.coerceAtLeast(70).toDouble()
-            }
-            val location = Location(world, x, safeY, z)
+            // 在候选坐标所在区域线程中计算真实地表高度并进行安全检测
+            val candidate = Location(world, x, 0.0, z)
+            Bukkit.getRegionScheduler().execute(Guozhan.instance, candidate) {
+                try {
+                    val xi = x.toInt()
+                    val zi = z.toInt()
 
-            // 检查位置是否安全和可用
-            if (isTerritoryFree(location)) {
-                val duration = System.currentTimeMillis() - startTime
-                pluginLogger.info("随机出生点查找成功，耗时: ${duration}ms, 尝试次数: $attempts")
-                future.complete(location)
-            } else {
-                // 递归尝试下一个位置
-                tryNextLocation()
+                    // 🔧 修复：寻找真正的固体地面，而不是最高方块
+                    val safeGroundY = findSafeGroundLevel(world, xi, zi)
+                    if (safeGroundY == null) {
+                        pluginLogger.fine("[随机出生] 位置 ($xi, $zi) 未找到安全地面")
+                        // 切回全局调度器进行下一次尝试
+                        Bukkit.getGlobalRegionScheduler().execute(Guozhan.instance) {
+                            tryNextLocation()
+                        }
+                        return@execute
+                    }
+
+                    // 在安全地面上方1格的位置传送玩家
+                    val finalY = safeGroundY + 1
+                    val finalLocation = Location(world, x, finalY.toDouble(), z)
+
+                    // 1) 领土必须为空置；2) 必须通过完整安全检查（非水/岩浆、脚下为固体、头顶有空间、周围无危险方块等）
+                    if (isTerritoryFree(finalLocation) && isLocationSafeSync(finalLocation)) {
+                        val duration = System.currentTimeMillis() - startTime
+                        val groundBlock = world.getBlockAt(xi, safeGroundY, zi)
+                        pluginLogger.info("随机出生点查找成功，耗时: ${duration}ms, 尝试次数: $attempts, 地面: ${groundBlock.type} at Y=$safeGroundY")
+                        future.complete(finalLocation)
+                    } else {
+                        pluginLogger.fine("[随机出生] 位置 ($xi, $finalY, $zi) 未通过安全检查或领土检查")
+                        // 切回全局调度器进行下一次尝试，避免在区域线程中递归
+                        Bukkit.getGlobalRegionScheduler().execute(Guozhan.instance) {
+                            tryNextLocation()
+                        }
+                    }
+                } catch (e: Exception) {
+                    pluginLogger.fine("[随机出生] 在区域线程计算高度失败: ${e.message}")
+                    Bukkit.getGlobalRegionScheduler().execute(Guozhan.instance) { tryNextLocation() }
+                }
             }
         }
 
@@ -150,14 +216,23 @@ object RandomSpawnManager {
      * @param player 需要保护的玩家
      */
     private fun giveFallDamageProtection(player: Player) {
-        // 给予5秒的摔落伤害保护
+        // 给予15秒的缓降与短暂抗性，避免出生后因延迟加载/微高差而致死
         player.addPotionEffect(
             org.bukkit.potion.PotionEffect(
                 org.bukkit.potion.PotionEffectType.SLOW_FALLING,
-                100, // 5秒 (100 ticks)
-                0, // 等级0
-                false, // 不显示粒子效果
-                false // 不显示图标
+                300, // 15秒 (300 ticks)
+                0,
+                false,
+                false
+            )
+        )
+        player.addPotionEffect(
+            PotionEffect(
+                PotionEffectType.RESISTANCE,
+                100, // 5秒
+                0,
+                false,
+                false
             )
         )
 
@@ -168,38 +243,81 @@ object RandomSpawnManager {
     }
 
     /**
+     * 寻找安全的地面高度
+     * @param world 世界
+     * @param x X坐标
+     * @param z Z坐标
+     * @return 安全地面的Y坐标，如果找不到则返回null
+     */
+    private fun findSafeGroundLevel(world: World, x: Int, z: Int): Int? {
+        try {
+            // 从最高方块开始向下搜索
+            val startY = world.getHighestBlockYAt(x, z)
+            val minY = Config.RandomSpawn.minYLevel
+            val maxY = Config.RandomSpawn.maxYLevel
+
+            // 定义安全的地面方块类型
+            val safeGroundBlocks = setOf(
+                org.bukkit.Material.GRASS_BLOCK,
+                org.bukkit.Material.DIRT,
+                org.bukkit.Material.STONE,
+                org.bukkit.Material.COBBLESTONE,
+                org.bukkit.Material.SAND,
+                org.bukkit.Material.SANDSTONE,
+                org.bukkit.Material.GRAVEL,
+                org.bukkit.Material.DEEPSLATE,
+                org.bukkit.Material.ANDESITE,
+                org.bukkit.Material.DIORITE,
+                org.bukkit.Material.GRANITE
+            )
+
+            // 从最高点向下搜索安全地面
+            for (y in startY downTo minY) {
+                if (y > maxY) continue
+
+                val block = world.getBlockAt(x, y, z)
+                val blockType = block.type
+
+                // 检查是否是安全的地面方块
+                if (blockType in safeGroundBlocks) {
+                    // 确保上方有足够空间（至少2格空气）
+                    val aboveBlock1 = world.getBlockAt(x, y + 1, z)
+                    val aboveBlock2 = world.getBlockAt(x, y + 2, z)
+
+                    if (aboveBlock1.type == org.bukkit.Material.AIR &&
+                        aboveBlock2.type == org.bukkit.Material.AIR) {
+                        pluginLogger.fine("[随机出生] 找到安全地面: $blockType at ($x, $y, $z)")
+                        return y
+                    }
+                }
+            }
+
+            pluginLogger.fine("[随机出生] 在 ($x, $z) 未找到安全地面，搜索范围: $minY-$maxY")
+            return null
+        } catch (e: Exception) {
+            pluginLogger.warning("[随机出生] 搜索安全地面时发生错误: ${e.message}")
+            return null
+        }
+    }
+
+    /**
      * 检测是否为平坦世界
      * @param world 要检测的世界
      * @return 是否为平坦世界
      */
     private fun isLikelyFlatWorld(world: World): Boolean {
         return try {
-            // 检查世界出生点附近的地形特征
             val spawnLocation = world.spawnLocation
-            val x = spawnLocation.blockX
-            val z = spawnLocation.blockZ
+            val spawnY = spawnLocation.y
 
-            // 检查Y=4-10范围内的方块分布
-            var grassCount = 0
-            var dirtCount = 0
-            var bedrockCount = 0
+            // 简化检测：平坦世界的出生点通常在Y=4-10之间
+            val isFlat = spawnY <= 10.0
 
-            for (y in 1..10) {
-                val block = world.getBlockAt(x, y, z)
-                val blockType = block.type
-                if (blockType == org.bukkit.Material.GRASS_BLOCK) {
-                    grassCount++
-                } else if (blockType == org.bukkit.Material.DIRT) {
-                    dirtCount++
-                } else if (blockType == org.bukkit.Material.BEDROCK) {
-                    bedrockCount++
-                }
-                // 忽略其他方块类型
-            }
+            pluginLogger.info("[平坦世界检测] 世界: ${world.name}, 出生点Y坐标: ${spawnY}, 检测结果: ${if (isFlat) "平坦世界" else "普通世界"}")
 
-            // 平坦世界特征：有基岩、泥土和草方块，且高度较低
-            bedrockCount > 0 && (grassCount > 0 || dirtCount > 0) && spawnLocation.y < 20
+            isFlat
         } catch (e: Exception) {
+            pluginLogger.warning("[平坦世界检测] 检测失败: ${e.message}")
             // 如果检测失败，假设不是平坦世界
             false
         }

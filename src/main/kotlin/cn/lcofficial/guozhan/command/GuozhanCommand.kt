@@ -1263,30 +1263,13 @@ object GuozhanCommand : TabExecutor {
             return
         }
 
-        // 扣除资源
-        sender.takeItem(Material.IRON_INGOT, cost)
-
-        // 执行占领
-        territory.owner = user.country
-        territory.loyalty = 100
-        territory.save()
-
-        // 随机生成资源
-        TerritoryManager.generateRandomResource(territory)
-
-        // 显示占领成功信息
-        sender.sendSuccess("成功占领了这块领土！")
-        sender.sendInfo("消耗了 ${cost} 个铁锭")
-
-        // 显示剩余资源
-        val remainingIron = sender.inventory.all(Material.IRON_INGOT).values.sumOf { it.amount }
-        sender.sendInfo("剩余铁锭: ${remainingIron}个")
-
-        // 显示发现的资源
-        if (territory.resourceType != ResourceType.NONE) {
-            sender.sendSuccess("这块领土上发现了${territory.resourceType}资源！")
-            sender.sendInfo("使用 /u harvest 来收获资源")
+        // 启动计时占领流程（不立即扣除资源，完成时扣除）
+        if (cn.lcofficial.guozhan.manager.ClaimManager.isTerritoryBeingClaimed(territory.world, territory.x, territory.z)) {
+            sender.sendError("该领土正在被占领中，请稍候...")
+            return
         }
+        cn.lcofficial.guozhan.manager.ClaimManager.startClaim(sender, territory, user.country!!)
+        sender.sendInfo("已开始占领进程，请保持在此区块内，期间受到攻击或离开将中断占领。")
 
         // v1.3.13修复：使用数据库查询而不是缓存
         val countryTerritories = TerritoryManager.getTerritoriesByCountry(user.country!!).size
