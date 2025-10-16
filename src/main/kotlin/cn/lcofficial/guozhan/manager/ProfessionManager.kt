@@ -3,6 +3,7 @@ package cn.lcofficial.guozhan.manager
 import cn.lcofficial.guozhan.config.Config
 import cn.lcofficial.guozhan.data.Profession
 import cn.lcofficial.guozhan.data.User
+import cn.lcofficial.guozhan.pluginLogger
 import org.bukkit.Bukkit
 import org.bukkit.entity.Player
 import org.bukkit.potion.PotionEffect
@@ -38,11 +39,41 @@ object ProfessionManager {
      * @return 是否可以升级
      */
     fun canUpgradeProfession(user: User): Boolean {
-        if (user.profession == null || user.professionLevel >= 2) return false
+        // 检查是否有职业
+        if (user.profession == null) return false
 
-        // 暂时简化逻辑：如果有职业且等级小于2，就可以升级
-        // TODO: 未来可以添加professionSetTime字段来实现更精确的时间控制
-        return true
+        // 检查是否已达到最高等级
+        if (user.professionLevel >= 2) return false
+
+        // 检查是否已设置职业时间戳
+        val professionSetTime = user.professionSetTime
+        if (professionSetTime == null) {
+            // 如果没有时间戳，说明是旧数据，允许升级但记录警告
+            pluginLogger.warning("玩家 ${user.name} 的职业设置时间为空，允许升级但建议检查数据")
+            return true
+        }
+
+        // 检查是否已过24小时冷却时间
+        val upgradeDelayMs = Config.Profession.upgradeDelayHours * 60 * 60 * 1000L
+        val currentTime = System.currentTimeMillis()
+        val timeSinceSet = currentTime - professionSetTime
+
+        return timeSinceSet >= upgradeDelayMs
+    }
+
+    /**
+     * 获取职业升级剩余冷却时间（毫秒）
+     * @param user 用户
+     * @return 剩余冷却时间，如果可以升级则返回0
+     */
+    fun getUpgradeCooldownRemaining(user: User): Long {
+        val professionSetTime = user.professionSetTime ?: return 0L
+        val upgradeDelayMs = Config.Profession.upgradeDelayHours * 60 * 60 * 1000L
+        val currentTime = System.currentTimeMillis()
+        val timeSinceSet = currentTime - professionSetTime
+        val remaining = upgradeDelayMs - timeSinceSet
+
+        return if (remaining > 0) remaining else 0L
     }
 
     /**
@@ -56,21 +87,27 @@ object ProfessionManager {
     fun setProfession(user: User, profession: Profession) {
         user.profession = profession
         user.professionLevel = 1
+        user.professionSetTime = System.currentTimeMillis() // 记录设置时间
         user.save()
-        
+
         val player = Bukkit.getPlayer(user.uniqueId)
         player?.let { applyProfessionEffects(it, profession, 1) }
+
+        pluginLogger.info("玩家 ${user.name} 设置职业为 ${profession.name}，24小时后可升级")
     }
-    
+
     fun upgradeProfession(user: User) {
         if (user.profession == null) return
-        
+
         if (user.professionLevel < 2) {
             user.professionLevel = 2
+            user.professionSetTime = System.currentTimeMillis() // 更新升级时间
             user.save()
-            
+
             val player = Bukkit.getPlayer(user.uniqueId)
             player?.let { applyProfessionEffects(it, user.profession!!, 2) }
+
+            pluginLogger.info("玩家 ${user.name} 升级职业 ${user.profession!!.name} 至2级")
         }
     }
     

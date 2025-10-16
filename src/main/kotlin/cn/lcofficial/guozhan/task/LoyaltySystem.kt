@@ -191,23 +191,34 @@ class LoyaltySystem {
     fun restoreLoyalty(country: cn.lcofficial.guozhan.data.Country) {
         val territories = TerritoryManager.getTerritoriesByCountry(country)
         var totalCost = 0
-        
+
+        // v1.3.18修复：根据每个区块的每小时收入计算恢复成本
         territories.forEach { territory ->
             val missingLoyalty = 100 - territory.loyalty
             if (missingLoyalty > 0) {
-                totalCost += (missingLoyalty * 0.5).toInt()
+                // 计算该区块每小时的收入（金币）
+                val goldPerHour = cn.lcofficial.guozhan.economy.RegionalTaxSystem.calculateGoldTaxPerHour(territory)
+                val diamondPerHour = cn.lcofficial.guozhan.economy.RegionalTaxSystem.calculateDiamondTaxPerHour(territory)
+
+                // 钻石转金币（使用配置的转换率）
+                val diamondToGoldRate = cn.lcofficial.guozhan.config.Config.Shield.diamondToGoldRate
+                val totalIncomePerHour = goldPerHour + (diamondPerHour * diamondToGoldRate)
+
+                // 成本 = 该区块每小时收入 × 0.5小时
+                val territoryCost = (totalIncomePerHour * 0.5).toInt()
+                totalCost += territoryCost
             }
         }
-        
+
         if (country.gold >= totalCost) {
             country.gold -= totalCost
             country.save()
-            
+
             territories.forEach { territory ->
                 territory.loyalty = 100
                 territory.save()
             }
-            
+
             Bukkit.broadcastMessage("§a[国战] ${country.name}已恢复所有领土忠诚度！")
         }
     }

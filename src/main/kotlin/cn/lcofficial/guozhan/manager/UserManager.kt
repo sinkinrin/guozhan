@@ -23,6 +23,7 @@ object UserManager {
                     title = row[Users.title],
                     profession = row[Users.profession],
                     professionLevel = row[Users.professionLevel],
+                    professionSetTime = row[Users.professionSetTime],
                     claimMode = row[Users.claimMode]
                 )
             }

@@ -17,6 +17,7 @@ object Users : IdTable<String>("gz_users") {
     val title = varchar("title", 32).default("国民")
     val profession = enumerationByName<Profession>("profession", 10).nullable()
     val professionLevel = integer("profession_level").default(1)
+    val professionSetTime = long("profession_set_time").nullable() // 职业设置/升级时间戳
     val claimMode = enumerationByName<ClaimMode>("claim_mode", 10).default(ClaimMode.AUTO)
 }
 
@@ -37,6 +38,7 @@ class User(
     var title: String = "国民",
     var profession: Profession? = null,
     var professionLevel: Int = 1,
+    var professionSetTime: Long? = null, // 职业设置/升级时间戳
     var claimMode: ClaimMode = ClaimMode.AUTO
 ) {
     var country: Country?
@@ -66,6 +68,7 @@ class User(
             it[title] = title
             it[profession] = profession
             it[professionLevel] = professionLevel
+            it[professionSetTime] = this@User.professionSetTime
             it[claimMode] = this@User.claimMode
         }
     }

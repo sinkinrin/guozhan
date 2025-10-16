@@ -1,6 +1,8 @@
 package cn.lcofficial.guozhan.manager
 
 import cn.lcofficial.guozhan.data.*
+import cn.lcofficial.guozhan.pluginLogger
+import cn.lcofficial.guozhan.Guozhan
 import org.bukkit.Chunk
 import org.bukkit.Location
 import org.jetbrains.exposed.sql.and
@@ -146,6 +148,60 @@ object TerritoryManager {
     }
 
     /**
+     * 预热缓存：从数据库加载所有领土数据到内存缓存
+     * 用于插件启动时确保缓存已填充，避免其他Manager初始化时遍历空缓存
+     */
+    fun loadAll() = transaction {
+        val startTime = System.currentTimeMillis()
+        var loadedCount = 0
+        var skippedCount = 0
+
+        pluginLogger.info("[TerritoryManager] 开始预热缓存：从数据库加载所有领土...")
+
+        TerritoryBlocks.selectAll().forEach { row ->
+            try {
+                val territoryId = UUID.fromString(row[TerritoryBlocks.id].value)
+
+                // 如果缓存中已存在，跳过
+                if (territories.containsKey(territoryId)) {
+                    return@forEach
+                }
+
+                val territory = TerritoryBlock(
+                    territoryId,
+                    row[TerritoryBlocks.x],
+                    row[TerritoryBlocks.z],
+                    row[TerritoryBlocks.world],
+                    row[TerritoryBlocks.loyalty],
+                    row[TerritoryBlocks.owner]?.value?.let { UUID.fromString(it) },
+                    row[TerritoryBlocks.resourceType],
+                    row[TerritoryBlocks.resourceAmount],
+                    row[TerritoryBlocks.lastHarvestTime],
+                    row[TerritoryBlocks.lastLoyaltyUpdateTime],
+                    row[TerritoryBlocks.isCapital],
+                    row[TerritoryBlocks.coreHealth],
+                    row[TerritoryBlocks.lastCoreHealthUpdateTime]
+                )
+
+                territories[territoryId] = territory
+                loadedCount++
+
+            } catch (e: IllegalArgumentException) {
+                pluginLogger.warning("[TerritoryManager] 跳过无效的UUID数据: 领土ID='${row[TerritoryBlocks.id].value}', 所有者ID='${row[TerritoryBlocks.owner]?.value}' - ${e.message}")
+                skippedCount++
+            } catch (e: Exception) {
+                pluginLogger.severe("[TerritoryManager] 加载领土数据时发生错误: ${e.message}")
+                e.printStackTrace()
+                skippedCount++
+            }
+        }
+
+        val duration = System.currentTimeMillis() - startTime
+        pluginLogger.info("[TerritoryManager] 缓存预热完成：加载了 $loadedCount 个领土，跳过 $skippedCount 个无效记录，耗时 ${duration}ms")
+        pluginLogger.info("[TerritoryManager] 当前缓存大小：${territories.size} 个领土")
+    }
+
+    /**
      * 计算占领区块所需时间
      * @param territory 要占领的区块
      * @param player 占领的玩家
@@ -155,19 +211,19 @@ object TerritoryManager {
     fun calculateClaimTime(territory: TerritoryBlock, player: org.bukkit.entity.Player, country: Country): Long {
         // 基础占领时间（秒）
         var baseTime = 5.0
-        
+
         // 计算与王城的距离
         val capital = country.capital
         val distanceX = Math.abs(territory.x - capital.x)
         val distanceZ = Math.abs(territory.z - capital.z)
         val distance = Math.sqrt((distanceX * distanceX + distanceZ * distanceZ).toDouble()).toInt()
-        
+
         // 每增加1个区块的距离，基础占领时长增加0.25秒
         baseTime += distance * 0.25
-        
+
         // 计算接壤面数
         val adjacentFaces = territory.calculateAdjacentFaces()
-        
+
         // 如果是占领对方领地
         if (territory.isOwned() && territory.owner?.id != country.id) {
             // 根据接壤面数增加占领时间
@@ -175,12 +231,12 @@ object TerritoryManager {
                 adjacentFaces >= 3 -> baseTime *= 2.0 // 增加100%
                 adjacentFaces == 2 -> baseTime *= 1.5 // 增加50%
             }
-            
+
             // 如果是占领王城区块，额外增加1000%占领时长
             if (territory.isCapital) {
                 baseTime *= 11.0 // 增加1000%
             }
-        } 
+        }
         // 如果是占领无主区块
         else if (!territory.isOwned()) {
             // 根据接壤面数减少占领时间
@@ -189,11 +245,24 @@ object TerritoryManager {
                 adjacentFaces == 2 -> baseTime /= 2.0 // 提升100%速度
             }
         }
-        
+
+        // 征服者职业加成：圈地更快
+        val user = UserManager.getUser(player.uniqueId)
+        if (user?.profession == cn.lcofficial.guozhan.data.Profession.CONQUEROR) {
+            // 根据职业等级应用不同的速度加成
+            val speedBonus = when (user.professionLevel) {
+                1 -> 0.75 // 1级：占领时间减少25%（速度提升33%）
+                2 -> 0.50 // 2级：占领时间减少50%（速度提升100%）
+                else -> 1.0 // 无加成
+            }
+            baseTime *= speedBonus
+            pluginLogger.info("征服者职业加成：玩家 ${player.name} (等级${user.professionLevel}) 占领时间减少至 ${(speedBonus * 100).toInt()}%")
+        }
+
         // 多人占领相同区块会触发占领速度提升
         // 这部分逻辑应该在实际占领过程中动态计算，这里只是示例
         // 每多1人速度提升25%，最多提升100%
-        
+
         // 转换为毫秒
         return (baseTime * 1000).toLong()
     }
@@ -204,12 +273,21 @@ object TerritoryManager {
      * @param country 尝试占领的国家
      * @return 是否可以占领
      * v1.3.13修复：检查防御者（领土所有者）的护盾，而不是攻击者的护盾
+     * v1.3.18修复：战争时间内核心区域忽略护盾
      */
     fun canClaim(territory: TerritoryBlock, country: Country): Boolean {
-        // v1.3.13修复：如果领土所有者开启了护盾，不能被占领
+        // v1.3.18修复：战争时间内核心区域忽略护盾
         val defender = territory.owner
         if (defender != null && cn.lcofficial.guozhan.manager.ShieldManager.isShieldActive(defender)) {
-            return false
+            // 检查是否在战争时间的核心区域内
+            val warScheduler = Guozhan.instance.warScheduler
+            val isInCoreWarZone = warScheduler.isCoreWarZone(territory.x, territory.z)
+
+            if (!isInCoreWarZone) {
+                // 不在核心战争区域或不在战争时间，护盾生效
+                return false
+            }
+            // 在战争时间的核心区域内，忽略护盾继续检查其他条件
         }
 
         // 检查是否与现有领土接壤

@@ -9,10 +9,10 @@ group = "cn.lcofficial"
 version = "1.0-SNAPSHOT"
 
 repositories {
+    maven("https://repo.papermc.io/repository/maven-public") // PaperMC 优先，包含 squaremap-api
     maven("https://nexus.cyanbukkit.cn/repository/maven-public/")
     maven("https://maven.aliyun.com/repository/public")
     maven("https://nexus.nextcraft.cn/repository/maven-public")
-    maven("https://repo.papermc.io/repository/maven-public")
     maven("https://repo.extendedclip.com/content/repositories/placeholderapi/")
     maven("https://repo.jpenilla.xyz/snapshots/")
     maven("https://jitpack.io") // JitPack for MockBukkit
@@ -24,7 +24,7 @@ dependencies {
     compileOnly("dev.folia:folia-api:1.21.5-R0.1-SNAPSHOT")
     compileOnly("me.clip:placeholderapi:2.11.6")
     compileOnly("com.comphenix.protocol:ProtocolLib:5.3.0")
-    compileOnly("xyz.jpenilla:squaremap-api:1.3.6")
+    compileOnly("xyz.jpenilla:squaremap-api:1.2.0")
     compileOnly(libs.exposed.core)
     compileOnly(libs.exposed.dao)
     compileOnly(libs.exposed.jdbc)

@@ -1102,11 +1102,14 @@ object GuozhanCommand : TabExecutor {
         }
 
 // 填充占位符
+        // v1.3.18修复：使用TerritoryManager统计实际占领的区块数量
+        val actualTerritoryCount = TerritoryManager.getTerritoriesByCountry(country).size
+
         val placeholders = mapOf(
             "name" to country.name,
             "owner" to (country.owner?.name ?: "未知"),
             "created" to SimpleDateFormat("yyyy-MM-dd HH:mm").format(Date(country.createTime)),
-            "territory" to country.cities.count().toString(),
+            "territory" to actualTerritoryCount.toString(),
             "join_mode" to if (country.public) "开放" else "仅邀请",
             "shield" to if (country.shield) "开启" else "关闭",
             "capital_x" to country.capital.x.toString(),
@@ -1130,11 +1133,14 @@ object GuozhanCommand : TabExecutor {
         }
 
         countriesPage.forEach { country ->
+            // v1.3.18修复：使用TerritoryManager统计实际占领的区块数量
+            val actualTerritoryCount = TerritoryManager.getTerritoriesByCountry(country).size
+
             val msg = Message.Commands.List.Format
                 .replace("%id%", country.id.toString())
                 .replace("%name%", country.name)
                 .replace("%owner%", country.owner?.name ?: "未知")
-                .replace("%territory%", country.cities.count().toString())
+                .replace("%territory%", actualTerritoryCount.toString())
             sender.sendMessage(msg.mini(false))
         }
 

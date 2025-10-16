@@ -104,6 +104,78 @@ object CountryManager {
      */
     fun getAllCountries(): Collection<Country> = countries.values
 
+    /**
+     * 预热缓存：从数据库加载所有国家数据到内存缓存
+     * 用于插件启动时确保缓存已填充，避免其他Manager初始化时遍历空缓存
+     */
+    fun reloadAll() = transaction {
+        val startTime = System.currentTimeMillis()
+        var loadedCount = 0
+        var skippedCount = 0
+
+        pluginLogger.info("[CountryManager] 开始预热缓存：从数据库加载所有国家...")
+
+        Countries.selectAll().forEach { row ->
+            try {
+                val countryId = UUID.fromString(row[Countries.id].value)
+
+                // 如果缓存中已存在，跳过
+                if (countries.containsKey(countryId)) {
+                    return@forEach
+                }
+
+                val country = Country(
+                    countryId,
+                    UUID.fromString(row[Countries.owner].value),
+                    row[Countries.name],
+                    row[Countries.createTime],
+                    row[Countries.public],
+                    row[Countries.shield],
+                    row[Countries.gold],
+                    row[Countries.diamond],
+                    row[Countries.economyPoints],
+                    UUID.fromString(row[Countries.capital].value),
+                    row[Countries.shieldEndTime],
+                    row[Countries.shieldCooldownEnd],
+                    row[Countries.coreHealth],
+                    row[Countries.coreLocationX],
+                    row[Countries.coreLocationY],
+                    row[Countries.coreLocationZ],
+                    row[Countries.coreWorld],
+                    row[Countries.lastHealthRegenTime]
+                )
+
+                // 加载国家的城市数据
+                Cities.select(
+                    Cities.id, Cities.owner
+                ).where { Cities.owner eq country.id.toString() }.forEach { cityRow ->
+                    try {
+                        val cityId = UUID.fromString(cityRow[Cities.id].value)
+                        // 注意：这里只是预热缓存，不需要完整加载城市对象
+                        // 城市对象会在实际使用时通过CityManager懒加载
+                    } catch (e: IllegalArgumentException) {
+                        pluginLogger.warning("[CountryManager] 跳过无效的城市UUID: '${cityRow[Cities.id].value}' - ${e.message}")
+                    }
+                }
+
+                countries[countryId] = country
+                loadedCount++
+
+            } catch (e: IllegalArgumentException) {
+                pluginLogger.warning("[CountryManager] 跳过无效的UUID数据: 国家ID='${row[Countries.id].value}', 所有者ID='${row[Countries.owner].value}', 首都ID='${row[Countries.capital].value}' - ${e.message}")
+                skippedCount++
+            } catch (e: Exception) {
+                pluginLogger.severe("[CountryManager] 加载国家数据时发生错误: ${e.message}")
+                e.printStackTrace()
+                skippedCount++
+            }
+        }
+
+        val duration = System.currentTimeMillis() - startTime
+        pluginLogger.info("[CountryManager] 缓存预热完成：加载了 $loadedCount 个国家，跳过 $skippedCount 个无效记录，耗时 ${duration}ms")
+        pluginLogger.info("[CountryManager] 当前缓存大小：${countries.size} 个国家")
+    }
+
     fun create(player: Player, city: City, name: String): Country? = transaction {
         val user = player.user()
         if (user.country != null) {

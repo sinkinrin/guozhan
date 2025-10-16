@@ -135,19 +135,24 @@ class Guozhan : JavaPlugin() {
         DiplomacyConfig.init(this)
         cn.lcofficial.guozhan.config.TechnologyConfig.init(this)
         DataManager.init(this)
-        
+
+        // 🔧 v1.3.18修复：预热缓存 - 在所有Manager初始化前加载数据到内存缓存
+        pluginLogger.info("正在预热缓存...")
+        cn.lcofficial.guozhan.manager.CountryManager.reloadAll()
+        cn.lcofficial.guozhan.manager.TerritoryManager.loadAll()
+
         // 初始化领土管理器
         pluginLogger.info("正在初始化领土管理系统...")
         TerritoryManager
-        
+
         // 初始化经济管理器
         pluginLogger.info("正在初始化经济管理器...")
         EconomyManager
-        
+
         // 初始化外交管理器
         pluginLogger.info("正在初始化外交管理器...")
         DiplomacyManager
-        
+
         // 初始化战争管理器
         pluginLogger.info("正在初始化战争管理器...")
         WarManager
