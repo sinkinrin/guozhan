@@ -148,7 +148,7 @@ object CoreManager {
         updateBossBar(country, attackerCountry)
 
         // 向相关玩家发送消息
-        val maxHealth = cn.lcofficial.guozhan.config.Config.Country.coreHealthInitial
+    val maxHealth = Config.Country.coreHealthMax
         val attackerMessage = if (actualDamage < DAMAGE_PER_ATTACK) {
             "§c你攻击了 ${country.name} 的核心！造成 ${actualDamage} 点伤害（离线保护减伤）剩余血量：${country.coreHealth}/${maxHealth}"
         } else {

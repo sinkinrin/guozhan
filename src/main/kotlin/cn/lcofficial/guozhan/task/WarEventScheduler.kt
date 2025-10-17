@@ -1,5 +1,6 @@
 package cn.lcofficial.guozhan.task
 
+import cn.lcofficial.guozhan.Guozhan
 import cn.lcofficial.guozhan.manager.CountryManager
 import cn.lcofficial.guozhan.manager.TerritoryManager
 import org.bukkit.Bukkit
@@ -110,40 +111,50 @@ class WarEventScheduler {
     private fun distributeRewards(winners: Map<UUID, Int>) {
         val totalScore = winners.values.sum()
         if (totalScore == 0) return
-        
+
         winners.forEach { (countryId, score) ->
             val country = CountryManager.getCountry(countryId)
             if (country != null) {
                 val rewardPercentage = score.toDouble() / totalScore
                 val goldReward = (1000 * rewardPercentage).toInt()
                 val diamondReward = (100 * rewardPercentage).toInt()
-                
+
                 // 在王城附近生成奖励箱
                 val location = country.getCoreLocation()?.clone()?.add(0.0, 1.0, 0.0)
                 if (location != null) {
-                    val block = location.block
-                    block.type = Material.CHEST
-                    val chest = block.state as Chest
-                    
-                    // 添加奖励物品
-                    val inventory = chest.inventory
-                    repeat(goldReward) {
-                        inventory.addItem(org.bukkit.inventory.ItemStack(Material.GOLD_INGOT))
+                    // 🔧 修复：使用 Region Scheduler 在正确的区域线程中执行区块操作
+                    Bukkit.getRegionScheduler().execute(Guozhan.instance, location) {
+                        try {
+                            val block = location.block
+                            block.type = Material.CHEST
+                            val chest = block.state as Chest
+
+                            // 添加奖励物品
+                            val inventory = chest.inventory
+                            repeat(goldReward) {
+                                inventory.addItem(org.bukkit.inventory.ItemStack(Material.GOLD_INGOT))
+                            }
+                            repeat(diamondReward) {
+                                inventory.addItem(org.bukkit.inventory.ItemStack(Material.DIAMOND))
+                            }
+
+                            // 添加粒子效果
+                            location.world.spawnParticle(
+                                Particle.FIREWORK,
+                                location.clone().add(0.5, 1.0, 0.5),
+                                50,
+                                0.5,
+                                0.5,
+                                0.5,
+                                0.1
+                            )
+
+                            Guozhan.instance.logger.info("[王战奖励] 已为国家 ${country.name} 生成奖励箱: ${goldReward}金 ${diamondReward}钻")
+                        } catch (e: Exception) {
+                            Guozhan.instance.logger.severe("[王战奖励] 为国家 ${country.name} 生成奖励箱时出错: ${e.message}")
+                            e.printStackTrace()
+                        }
                     }
-                    repeat(diamondReward) {
-                        inventory.addItem(org.bukkit.inventory.ItemStack(Material.DIAMOND))
-                    }
-                    
-                    // 添加粒子效果
-                    location.world.spawnParticle(
-                        Particle.FIREWORK,
-                        location.clone().add(0.5, 1.0, 0.5),
-                        50,
-                        0.5,
-                        0.5,
-                        0.5,
-                        0.1
-                    )
                 }
             }
         }

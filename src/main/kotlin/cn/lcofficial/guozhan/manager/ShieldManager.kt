@@ -237,7 +237,8 @@ object ShieldManager {
      */
     private fun checkMemberLimit(country: Country): ShieldCheckResult {
         val members = getCountryMembers(country)
-        val maxMembers = 50 // 从配置文件读取
+        // 🔧 修复：从配置文件读取成员上限，而非硬编码
+        val maxMembers = Config.Shield.maxMembers
 
         if (members.size > maxMembers) {
             return ShieldCheckResult(false, "国家成员数量超过限制（${members.size}/$maxMembers），无法激活护盾")

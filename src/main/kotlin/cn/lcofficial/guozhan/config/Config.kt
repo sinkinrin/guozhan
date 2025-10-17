@@ -88,6 +88,7 @@ object Config : Configuration("config.yml") {
         var minDurationHours by int("shield.min-duration-hours", 1)
         var maxAspectRatio by double("shield.max-aspect-ratio", 2.0)
         var diamondToGoldRate by int("shield.diamond-to-gold-rate", 10)
+        var maxMembers by int("shield.max-members", 50) // 🔧 修复：从配置读取成员上限
     }
 
     internal object Profession : StaticLazy {

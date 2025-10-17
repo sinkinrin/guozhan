@@ -133,12 +133,16 @@ object WarEffects {
         
         // 发送胜利消息
         player.sendMessage("§a§l战争胜利! §f你的国家赢得了战争，获得了临时增益效果!")
-        
+
         // 给予经济奖励
         val user = player.user()
         val country = user.country
         if (country != null) {
-            country.economyPoints += DiplomacyConfig.getWarVictoryReward()
+            val reward = DiplomacyConfig.getWarVictoryReward()
+            country.economyPoints += reward
+            // 🔧 修复：持久化经济点数变化到数据库
+            country.save()
+            cn.lcofficial.guozhan.pluginLogger.info("[战争奖励] 国家 ${country.name} 获得胜利奖励: +${reward} 经济点数 (当前: ${country.economyPoints})")
         }
     }
     
@@ -162,15 +166,20 @@ object WarEffects {
         
         // 发送失败消息
         player.sendMessage("§c§l战争失败! §f你的国家在战争中失败，将承受短暂的负面效果。")
-        
+
         // 扣除经济惩罚
         val user = player.user()
         val country = user.country
         if (country != null) {
-            country.economyPoints -= DiplomacyConfig.getWarDefeatPenalty()
+            val penalty = DiplomacyConfig.getWarDefeatPenalty()
+            val oldPoints = country.economyPoints
+            country.economyPoints -= penalty
             if (country.economyPoints < 0) {
                 country.economyPoints = 0
             }
+            // 🔧 修复：持久化经济点数变化到数据库
+            country.save()
+            cn.lcofficial.guozhan.pluginLogger.info("[战争惩罚] 国家 ${country.name} 承受失败惩罚: -${penalty} 经济点数 (${oldPoints} -> ${country.economyPoints})")
         }
     }
 }

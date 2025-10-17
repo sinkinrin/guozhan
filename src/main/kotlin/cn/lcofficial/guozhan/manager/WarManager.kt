@@ -41,24 +41,32 @@ object WarManager {
     private fun loadWarStates() {
         // 清空缓存
         warStartTimes.clear()
-        
+
         // 获取所有国家
         val countries = CountryManager.countries.values
-        
+
         // 遍历所有国家对，检查战争状态
         for (country1 in countries) {
             for (country2 in countries) {
                 if (country1.id != country2.id) {
                     val relation = DiplomacyManager.getRelation(country1, country2)
                     if (relation.relationType == RelationType.WAR) {
-                        // 记录战争开始时间
+                        // 🔧 修复问题2：从数据库读取战争开始时间
                         val warId = getWarId(country1, country2)
-                        warStartTimes[warId] = System.currentTimeMillis()
+                        val warStartTime = relation.warStartTime ?: System.currentTimeMillis()
+                        warStartTimes[warId] = warStartTime
+
+                        // 如果数据库中没有战争开始时间，设置并保存
+                        if (relation.warStartTime == null) {
+                            relation.warStartTime = warStartTime
+                            relation.save()
+                            Guozhan.instance.logger.warning("[战争系统] 战争 $warId 缺少开始时间，已设置为当前时间")
+                        }
                     }
                 }
             }
         }
-        
+
         Guozhan.instance.logger.info("已加载 ${warStartTimes.size} 个战争状态")
     }
     
@@ -75,44 +83,67 @@ object WarManager {
      * 开始战争
      */
     fun startWar(country1: Country, country2: Country) {
+        // 🔧 修复问题1：检查是否已经处于战争状态，避免递归调用
+        val currentRelation = DiplomacyManager.getRelation(country1, country2)
+        if (currentRelation.relationType == RelationType.WAR) {
+            Guozhan.instance.logger.info("[战争系统] ${country1.name} 与 ${country2.name} 已经处于战争状态，跳过重复处理")
+            return
+        }
+
         val warId = getWarId(country1, country2)
-        warStartTimes[warId] = System.currentTimeMillis()
-        
+        val warStartTime = System.currentTimeMillis()
+        warStartTimes[warId] = warStartTime
+
+        // 🔧 修复问题2：设置战争开始时间到外交关系
+        currentRelation.warStartTime = warStartTime
+
         // 更新外交关系为战争状态
         DiplomacyManager.updateRelation(country1, country2, RelationType.WAR)
-        
+
         // 广播战争开始消息
         val message = "§c§l战争爆发! §f${country1.name} §c与 §f${country2.name} §c进入战争状态!"
         Bukkit.getOnlinePlayers().forEach { player ->
             player.sendMessage(message)
         }
+
+        Guozhan.instance.logger.info("[战争系统] 战争开始: ${country1.name} vs ${country2.name}, 开始时间: $warStartTime")
     }
     
     /**
      * 结束战争
      */
     fun endWar(country1: Country, country2: Country, winnerCountry: Country?) {
+        // 🔧 修复问题1：检查是否处于战争状态，避免递归调用
+        val currentRelation = DiplomacyManager.getRelation(country1, country2)
+        if (currentRelation.relationType != RelationType.WAR) {
+            Guozhan.instance.logger.info("[战争系统] ${country1.name} 与 ${country2.name} 不处于战争状态，跳过重复处理")
+            return
+        }
+
         val warId = getWarId(country1, country2)
         warStartTimes.remove(warId)
-        
+
+        // 🔧 修复问题2：清除战争开始时间
+        currentRelation.warStartTime = null
+
         // 更新外交关系为敌对状态
         DiplomacyManager.updateRelation(country1, country2, RelationType.HOSTILE)
-        
+
         // 广播战争结束消息
         val message = if (winnerCountry != null) {
             "§6战争结束! §f${winnerCountry.name} §6战胜了 §f${if (winnerCountry.id == country1.id) country2.name else country1.name}§6!"
         } else {
             "§6战争结束! §f${country1.name} §6与 §f${country2.name} §6的战争已经结束!"
         }
-        
+
         Bukkit.getOnlinePlayers().forEach { player ->
             player.sendMessage(message)
-            
+
             // 应用战争胜利/失败效果
             if (winnerCountry != null) {
                 val user = player.user()
                 val playerCountry = user.country
-                
+
                 if (playerCountry != null) {
                     if (playerCountry.id == winnerCountry.id) {
                         // 胜利方玩家获得胜利效果
@@ -124,6 +155,8 @@ object WarManager {
                 }
             }
         }
+
+        Guozhan.instance.logger.info("[战争系统] 战争结束: ${country1.name} vs ${country2.name}, 胜利者: ${winnerCountry?.name ?: "无"}")
     }
     
     /**
@@ -185,10 +218,19 @@ object WarManager {
             // 在战争中的击杀，给予击杀者国家经济奖励
             val reward = DiplomacyConfig.getWarKillReward()
             killerCountry.economyPoints += reward
-            
+
+            // 🔧 修复问题3：持久化经济点数到数据库
+            try {
+                killerCountry.save()
+                Guozhan.instance.logger.info("[战争击杀] ${killerCountry.name} 击杀 ${killedCountry.name} 成员，获得 ${reward} 经济点数（已持久化）")
+            } catch (e: Exception) {
+                Guozhan.instance.logger.severe("[战争击杀] 保存经济点数失败: ${e.message}")
+                e.printStackTrace()
+            }
+
             // 通知击杀者
             killer.sendMessage("§6战争击杀! §f你击杀了敌对国家的 §e${killed.name}§f, 你的国家获得了 §a$reward §f经济点数奖励!")
-            
+
             // 广播战争击杀消息
             val message = "§c战争消息: §f${killerCountry.name} §f的 §e${killer.name} §f在战争中击杀了 §f${killedCountry.name} §f的 §e${killed.name}§f!"
             Bukkit.getOnlinePlayers().forEach { player ->
@@ -278,7 +320,12 @@ object WarManager {
      */
     fun startWarGM(country1: Country, country2: Country) {
         val warId = getWarId(country1, country2)
-        warStartTimes[warId] = System.currentTimeMillis()
+        val warStartTime = System.currentTimeMillis()
+        warStartTimes[warId] = warStartTime
+
+        // 🔧 修复问题2：设置战争开始时间到外交关系
+        val relation = DiplomacyManager.getRelation(country1, country2)
+        relation.warStartTime = warStartTime
 
         // 更新外交关系为战争状态
         DiplomacyManager.updateRelation(country1, country2, RelationType.WAR)
@@ -289,7 +336,7 @@ object WarManager {
             player.sendMessage(message)
         }
 
-        Guozhan.instance.logger.info("[GM模式] 手动触发战争: ${country1.name} vs ${country2.name}")
+        Guozhan.instance.logger.info("[GM模式] 手动触发战争: ${country1.name} vs ${country2.name}, 开始时间: $warStartTime")
     }
 
     /**
@@ -298,6 +345,10 @@ object WarManager {
     fun endWarGM(country1: Country, country2: Country, gmSender: CommandSender?) {
         val warId = getWarId(country1, country2)
         warStartTimes.remove(warId)
+
+        // 🔧 修复问题2：清除战争开始时间
+        val relation = DiplomacyManager.getRelation(country1, country2)
+        relation.warStartTime = null
 
         // 更新外交关系为敌对状态
         DiplomacyManager.updateRelation(country1, country2, RelationType.HOSTILE)

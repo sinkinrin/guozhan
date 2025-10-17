@@ -14,6 +14,7 @@ import org.bukkit.entity.Player
 import org.jetbrains.exposed.dao.id.EntityID
 import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.insert
+import org.jetbrains.exposed.sql.select
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
@@ -38,6 +39,7 @@ object CountryManager {
                         row[Countries.diamond],
                         row[Countries.economyPoints],
                         UUID.fromString(row[Countries.capital].value),
+                        row[Countries.declaration], // v1.3.19新增：加载国家宣言
                         row[Countries.shieldEndTime],
                         row[Countries.shieldCooldownEnd],
                         row[Countries.coreHealth],
@@ -135,6 +137,7 @@ object CountryManager {
                     row[Countries.diamond],
                     row[Countries.economyPoints],
                     UUID.fromString(row[Countries.capital].value),
+                    row[Countries.declaration], // v1.3.19新增：加载国家宣言
                     row[Countries.shieldEndTime],
                     row[Countries.shieldCooldownEnd],
                     row[Countries.coreHealth],
@@ -203,6 +206,7 @@ object CountryManager {
             it[Countries.gold] = country.gold
             it[Countries.diamond] = country.diamond
             it[Countries.economyPoints] = country.economyPoints
+            it[Countries.declaration] = country.declaration // v1.3.19新增：初始化国家宣言
             it[Countries.coreHealth] = country.coreHealth
             it[Countries.coreLocationX] = country.coreLocationX
             it[Countries.coreLocationY] = country.coreLocationY
@@ -302,6 +306,7 @@ object CountryManager {
                 it[Countries.diamond],
                 it[Countries.economyPoints],
                 UUID.fromString(it[Countries.capital].value),
+                it[Countries.declaration], // v1.3.19新增：加载国家宣言
                 it[Countries.shieldEndTime],
                 it[Countries.shieldCooldownEnd],
                 it[Countries.coreHealth],

@@ -5,8 +5,7 @@ import cn.lcofficial.guozhan.config.Message.sendError
 import cn.lcofficial.guozhan.config.Message.sendSuccess
 import cn.lcofficial.guozhan.config.Message.sendInfo
 import cn.lcofficial.guozhan.config.Message.sendWarning
-import cn.lcofficial.guozhan.data.Country
-import cn.lcofficial.guozhan.data.Rank
+import cn.lcofficial.guozhan.data.*
 import cn.lcofficial.guozhan.manager.*
 import cn.lcofficial.guozhan.manager.UserManager.user
 import org.bukkit.Bukkit
@@ -17,6 +16,10 @@ import org.bukkit.command.CommandSender
 import org.bukkit.command.TabCompleter
 import org.bukkit.entity.Player
 import org.bukkit.inventory.ItemStack
+import org.jetbrains.exposed.sql.deleteAll
+import org.jetbrains.exposed.sql.selectAll
+import org.jetbrains.exposed.sql.transactions.transaction
+import org.jetbrains.exposed.sql.update
 import java.util.*
 
 /**
@@ -451,25 +454,85 @@ class GMCommand : CommandExecutor, TabCompleter {
         val dataType = args[1].lowercase()
         when (dataType) {
             "countries" -> {
+                // v1.3.19修复：实现清理国家数据的逻辑
                 val count = CountryManager.getAllCountries().size
-                // TODO: 实现清理国家数据的逻辑
+                transaction {
+                    // 清理国家相关的所有数据
+                    Countries.deleteAll()
+                    // 清理缓存
+                    CountryManager.countries.clear()
+                }
                 sender.sendSuccess("已清理 $count 个国家数据")
                 GMLogger.logGMAction(sender, "CLEAR_COUNTRIES", null, mapOf("count" to count))
             }
             "territories" -> {
-                // TODO: 实现清理领土数据的逻辑
-                sender.sendSuccess("已清理所有领土数据")
-                GMLogger.logGMAction(sender, "CLEAR_TERRITORIES", null, emptyMap())
+                // v1.3.19修复：实现清理领土数据的逻辑
+                val count = transaction {
+                    val territoryCount = TerritoryBlocks.selectAll().count()
+                    TerritoryBlocks.deleteAll()
+                    Territories.deleteAll()
+                    territoryCount
+                }
+                // 清理缓存
+                TerritoryManager.territories.clear()
+
+                sender.sendSuccess("已清理 $count 个领土数据")
+                GMLogger.logGMAction(sender, "CLEAR_TERRITORIES", null, mapOf("count" to count))
             }
             "users" -> {
-                // TODO: 实现清理用户数据的逻辑
-                sender.sendSuccess("已清理所有用户数据")
-                GMLogger.logGMAction(sender, "CLEAR_USERS", null, emptyMap())
+                // v1.3.19修复：实现清理用户数据的逻辑
+                val count = transaction {
+                    val userCount = Users.selectAll().count()
+                    // 清理所有用户的国家关联
+                    Users.update({ Users.countryId.isNotNull() }) {
+                        it[countryId] = null
+                        it[rank] = Rank.DEFAULT
+                    }
+                    userCount
+                }
+                // 清理缓存
+                UserManager.users.clear()
+
+                sender.sendSuccess("已清理 $count 个用户的国家关联数据")
+                GMLogger.logGMAction(sender, "CLEAR_USERS", null, mapOf("count" to count))
             }
             "all" -> {
-                // TODO: 实现清理所有数据的逻辑
-                sender.sendSuccess("已清理所有测试数据")
-                GMLogger.logGMAction(sender, "CLEAR_ALL_DATA", null, emptyMap())
+                // v1.3.19修复：实现清理所有数据的逻辑
+                val stats = transaction {
+                    val countryCount = Countries.selectAll().count()
+                    val territoryCount = TerritoryBlocks.selectAll().count()
+                    val userCount = Users.selectAll().count()
+
+                    // 按照依赖顺序清理数据
+                    TerritoryBlocks.deleteAll()
+                    Territories.deleteAll()
+                    DiplomaticRelations.deleteAll()
+                    CountryTechnologies.deleteAll()
+                    Countries.deleteAll()
+                    Cities.deleteAll()
+                    Users.update({ Users.countryId.isNotNull() }) {
+                        it[countryId] = null
+                        it[rank] = Rank.DEFAULT
+                    }
+
+                    mapOf(
+                        "countries" to countryCount,
+                        "territories" to territoryCount,
+                        "users" to userCount
+                    )
+                }
+
+                // 清理所有缓存
+                CountryManager.countries.clear()
+                TerritoryManager.territories.clear()
+                UserManager.users.clear()
+                CityManager.cities.clear()
+
+                sender.sendSuccess("已清理所有测试数据:")
+                sender.sendSuccess("  - 国家: ${stats["countries"]}")
+                sender.sendSuccess("  - 领土: ${stats["territories"]}")
+                sender.sendSuccess("  - 用户: ${stats["users"]}")
+                GMLogger.logGMAction(sender, "CLEAR_ALL_DATA", null, stats)
             }
             else -> {
                 sender.sendError("无效的数据类型，请使用: countries, territories, users, all")

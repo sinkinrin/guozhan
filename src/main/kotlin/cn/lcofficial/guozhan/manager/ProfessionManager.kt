@@ -28,7 +28,8 @@ object ProfessionManager {
     fun canSetProfession(user: User): Boolean {
         val country = user.country ?: return false
         val unlockDelayMs = Config.Profession.unlockDelayHours * 60 * 60 * 1000L
-        val countryCreateTime = country.createTime ?: return false
+        // v1.3.19修复：createTime是非空Long类型，移除不必要的Elvis操作符
+        val countryCreateTime = country.createTime
 
         return System.currentTimeMillis() - countryCreateTime >= unlockDelayMs
     }

@@ -1122,6 +1122,11 @@ object GuozhanCommand : TabExecutor {
         lines.forEach {
             sender.sendMessage(it)
         }
+
+        // v1.3.19新增：显示国家宣言
+        if (!country.declaration.isNullOrBlank()) {
+            sender.sendMessage("§6国家宣言: §f${country.declaration}")
+        }
     }
 
     fun listCountries(sender: CommandSender, page: Int) = transaction {
@@ -2859,7 +2864,47 @@ object GuozhanCommand : TabExecutor {
     }
 
     private fun setDeclaration(sender: CommandSender, declaration: String) {
-        sender.sendMessage("§a成功设置国家宣言: $declaration")
+        // v1.3.19修复：实现完整的国家宣言功能
+        if (sender !is Player) {
+            sender.sendMessage(Message.OnlyPlayer.mini())
+            return
+        }
+
+        val user = sender.user()
+        val country = user.country
+
+        if (country == null) {
+            sender.sendMessage("§c你还没有加入任何国家")
+            return
+        }
+
+        // 检查权限：只有君主和大臣可以设置宣言
+        if (user.rank != Rank.OWNER && user.rank != Rank.ADMIN) {
+            sender.sendMessage("§c只有君主和大臣可以设置国家宣言")
+            return
+        }
+
+        // 验证宣言长度（最多200字符）
+        if (declaration.length > 200) {
+            sender.sendMessage("§c国家宣言不能超过200个字符")
+            return
+        }
+
+        // 保存宣言
+        country.declaration = declaration
+        country.save()
+
+        sender.sendMessage("§a成功设置国家宣言:")
+        sender.sendMessage("§e$declaration")
+
+        // 通知国家成员
+        country.members.forEach { member ->
+            val player = Bukkit.getPlayer(member.uniqueId)
+            if (player != null && player != sender) {
+                player.sendMessage("§6[国家] §e君主设置了新的国家宣言:")
+                player.sendMessage("§f$declaration")
+            }
+        }
     }
 
     private fun moveCapital(sender: CommandSender) {

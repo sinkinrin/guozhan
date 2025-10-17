@@ -19,11 +19,11 @@ import java.util.concurrent.ConcurrentHashMap
  */
 object TributeSystem {
 
-    // 记录国家间的贡献关系
-    private val tributeRelations = mutableMapOf<String, TributeRelation>()
+    // 记录国家间的贡献关系 - 使用ConcurrentHashMap确保线程安全
+    private val tributeRelations = ConcurrentHashMap<String, TributeRelation>()
 
-    // 记录每个国家的贡献历史
-    private val tributeHistory = mutableMapOf<UUID, MutableList<TributeRecord>>()
+    // 记录每个国家的贡献历史 - 使用ConcurrentHashMap确保线程安全
+    private val tributeHistory = ConcurrentHashMap<UUID, MutableList<TributeRecord>>()
 
     // 玩家贡献冷却时间记录 (UUID -> 上次贡献时间戳)
     private val playerTributeCooldowns = ConcurrentHashMap<UUID, Long>()
@@ -68,35 +68,42 @@ object TributeSystem {
      * 建立贡献关系
      * @param tributeCountry 进贡国家
      * @param receivingCountry 接受国家
-     * @param tributeRate 贡献比率（百分比）
+     * @param tributeRate 贡献比率（百分比，必须在5-30之间）
      * @return 是否成功建立关系
      */
     fun establishTributeRelation(tributeCountry: Country, receivingCountry: Country, tributeRate: Int): Boolean {
+        // v1.3.19修复：防止国家对自己建立进贡关系
+        if (tributeCountry.id == receivingCountry.id) {
+            return false
+        }
+
         // 检查是否已存在贡献关系
         val relationId = getTributeRelationId(tributeCountry, receivingCountry)
         if (tributeRelations.containsKey(relationId)) {
             return false
         }
-        
-        // 限制贡献比率在5-30%之间
-        val validRate = tributeRate.coerceIn(5, 30)
-        
+
+        // v1.3.19修复：验证贡献比率必须在5-30%之间，无效则返回false
+        if (tributeRate !in 5..30) {
+            return false
+        }
+
         // 创建新的贡献关系
         val relation = TributeRelation(
             tributeCountryId = tributeCountry.id,
             receivingCountryId = receivingCountry.id,
-            tributeRate = validRate,
+            tributeRate = tributeRate,
             establishedTime = System.currentTimeMillis()
         )
-        
+
         tributeRelations[relationId] = relation
-        
+
         // 广播贡献关系建立消息
-        val message = "§6${tributeCountry.name} §e与 §6${receivingCountry.name} §e建立了贡献关系，贡献比率为 §6${validRate}%§e！"
+        val message = "§6${tributeCountry.name} §e与 §6${receivingCountry.name} §e建立了贡献关系，贡献比率为 §6${tributeRate}%§e！"
         Bukkit.getOnlinePlayers().forEach { player ->
             player.sendMessage(message)
         }
-        
+
         return true
     }
     
@@ -295,6 +302,7 @@ object TributeSystem {
     
     /**
      * 记录贡献历史
+     * 使用synchronized确保线程安全地修改历史记录列表
      */
     private fun recordTribute(sourceCountryId: UUID, targetCountryId: UUID, material: Material, amount: Int, value: Int) {
         val record = TributeRecord(
@@ -305,18 +313,20 @@ object TributeSystem {
             value = value,
             timestamp = System.currentTimeMillis()
         )
-        
-        // 添加到源国家的贡献历史
-        if (!tributeHistory.containsKey(sourceCountryId)) {
-            tributeHistory[sourceCountryId] = mutableListOf()
+
+        // 添加到源国家的贡献历史 - 使用computeIfAbsent和synchronized确保线程安全
+        synchronized(tributeHistory) {
+            val sourceHistory = tributeHistory.computeIfAbsent(sourceCountryId) {
+                Collections.synchronizedList(mutableListOf())
+            }
+            sourceHistory.add(record)
+
+            // 添加到目标国家的贡献历史
+            val targetHistory = tributeHistory.computeIfAbsent(targetCountryId) {
+                Collections.synchronizedList(mutableListOf())
+            }
+            targetHistory.add(record)
         }
-        tributeHistory[sourceCountryId]!!.add(record)
-        
-        // 添加到目标国家的贡献历史
-        if (!tributeHistory.containsKey(targetCountryId)) {
-            tributeHistory[targetCountryId] = mutableListOf()
-        }
-        tributeHistory[targetCountryId]!!.add(record)
     }
     
     /**

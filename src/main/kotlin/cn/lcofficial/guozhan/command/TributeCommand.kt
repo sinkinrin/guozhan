@@ -193,13 +193,25 @@ class TributeCommand : CommandExecutor, TabCompleter {
             sender.sendMessage("§c找不到名为 '$receivingCountryName' 的国家")
             return
         }
-        
+
+        // v1.3.19修复：防止国家对自己建立进贡关系
+        if (tributeCountry.id == receivingCountry.id) {
+            sender.sendMessage("§c国家不能对自己建立贡献关系")
+            return
+        }
+
+        // v1.3.19修复：在建立关系前验证税率范围，提供准确的错误消息
+        if (tributeRate !in 5..30) {
+            sender.sendMessage("§c贡献率必须在 §e5-30% §c之间")
+            return
+        }
+
         // 建立贡献关系
         val result = TributeSystem.establishTributeRelation(tributeCountry, receivingCountry, tributeRate)
         if (result) {
             sender.sendMessage("§a成功建立贡献关系: §f${tributeCountry.name} §a将向 §f${receivingCountry.name} §a贡献 §f${tributeRate}% §a的资源")
         } else {
-            sender.sendMessage("§c建立贡献关系失败，请检查贡献率是否在有效范围内(1-30)")
+            sender.sendMessage("§c建立贡献关系失败，可能这两个国家之间已存在贡献关系")
         }
     }
     

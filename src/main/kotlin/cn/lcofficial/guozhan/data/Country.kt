@@ -8,6 +8,7 @@ import org.bukkit.Material
 import org.bukkit.World
 import org.jetbrains.exposed.dao.id.IdTable
 import org.jetbrains.exposed.dao.id.EntityID
+import org.jetbrains.exposed.sql.select
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.jetbrains.exposed.sql.update
 import java.util.*
@@ -23,6 +24,8 @@ object Countries : IdTable<String>("gz_countries") {
     val gold = integer("gold")
     val diamond = integer("diamond")
     val economyPoints = integer("economy_points").default(0) // 经济点数
+    // v1.3.19新增：国家宣言字段
+    val declaration = text("declaration").nullable() // 国家宣言
     // 护盾系统持久化字段
     val shieldEndTime = long("shield_end_time").nullable() // 护盾结束时间戳
     val shieldCooldownEnd = long("shield_cooldown_end").nullable() // 护盾冷却结束时间戳
@@ -46,6 +49,8 @@ class Country(
     var diamond: Int,
     var economyPoints: Int = 0, // 经济点数
     var capitalId: UUID,
+    // v1.3.19新增：国家宣言属性
+    var declaration: String? = null, // 国家宣言
     // 护盾系统持久化属性
     var shieldEndTime: Long? = null, // 护盾结束时间戳
     var shieldCooldownEnd: Long? = null, // 护盾冷却结束时间戳
@@ -92,6 +97,7 @@ class Country(
             it[gold] = gold
             it[diamond] = diamond
             it[economyPoints] = economyPoints
+            it[declaration] = declaration // v1.3.19新增：保存国家宣言
             it[shieldEndTime] = shieldEndTime
             it[shieldCooldownEnd] = shieldCooldownEnd
             it[coreHealth] = coreHealth

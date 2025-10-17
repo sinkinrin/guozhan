@@ -16,6 +16,8 @@ object DiplomaticRelations : Table("gz_diplomatic_relations") {
     val friendliness = integer("friendliness").default(50) // 友好度，0-100
     val createdAt = long("created_at")
     val updatedAt = long("updated_at")
+    // 🔧 修复问题2：添加战争开始时间字段
+    val warStartTime = long("war_start_time").nullable() // 战争开始时间戳（仅在WAR状态时有值）
 
     override val primaryKey = PrimaryKey(id)
 }
@@ -41,9 +43,11 @@ class DiplomaticRelation(
     var relationType: RelationType,
     var friendliness: Int = 50, // 友好度，0-100
     val createdAt: Long,
-    var updatedAt: Long
+    var updatedAt: Long,
+    // 🔧 修复问题2：添加战争开始时间字段
+    var warStartTime: Long? = null // 战争开始时间戳（仅在WAR状态时有值）
 ) {
-    
+
     /**
      * 构造函数，从数据库行创建
      */
@@ -54,7 +58,8 @@ class DiplomaticRelation(
         relationType = row[DiplomaticRelations.relationType],
         friendliness = row[DiplomaticRelations.friendliness],
         createdAt = row[DiplomaticRelations.createdAt],
-        updatedAt = row[DiplomaticRelations.updatedAt]
+        updatedAt = row[DiplomaticRelations.updatedAt],
+        warStartTime = row[DiplomaticRelations.warStartTime]
     )
     
     /**
@@ -66,6 +71,8 @@ class DiplomaticRelation(
                 it[relationType] = this@DiplomaticRelation.relationType
                 it[friendliness] = this@DiplomaticRelation.friendliness
                 it[updatedAt] = System.currentTimeMillis()
+                // 🔧 修复问题2：保存战争开始时间
+                it[warStartTime] = this@DiplomaticRelation.warStartTime
             }
             this@DiplomaticRelation.updatedAt = System.currentTimeMillis()
         }
@@ -107,7 +114,7 @@ class DiplomaticRelation(
         fun create(country1Id: UUID, country2Id: UUID, relationType: RelationType = RelationType.NEUTRAL): DiplomaticRelation {
             val id = UUID.randomUUID()
             val now = System.currentTimeMillis()
-            
+
             return transaction {
                 DiplomaticRelations.insert {
                     it[DiplomaticRelations.id] = id
@@ -116,15 +123,18 @@ class DiplomaticRelation(
                     it[DiplomaticRelations.relationType] = relationType
                     it[createdAt] = now
                     it[updatedAt] = now
+                    // 🔧 修复问题2：如果是战争状态，设置战争开始时间
+                    it[warStartTime] = if (relationType == RelationType.WAR) now else null
                 }
-                
+
                 DiplomaticRelation(
                     id = id,
                     country1Id = country1Id,
                     country2Id = country2Id,
                     relationType = relationType,
                     createdAt = now,
-                    updatedAt = now
+                    updatedAt = now,
+                    warStartTime = if (relationType == RelationType.WAR) now else null
                 )
             }
         }

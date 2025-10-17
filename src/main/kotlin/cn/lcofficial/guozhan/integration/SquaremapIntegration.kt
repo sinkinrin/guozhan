@@ -281,8 +281,9 @@ class SquaremapIntegration {
                 val chunkX = capital.x * 16 + 8 // 区块中心
                 val chunkZ = capital.z * 16 + 8
 
-                // 创建首都图标标记
-                val marker = Marker.icon(Point.of(chunkX.toDouble(), chunkZ.toDouble()), Key.of("minecraft_golden_crown"), 32)
+                // 🔧 修复：使用 Squaremap 内置图标而非未注册的自定义图标
+                // Squaremap 1.2.0 内置图标：使用 "greenflag" 作为首都标记
+                val marker = Marker.icon(Point.of(chunkX.toDouble(), chunkZ.toDouble()), Key.of("greenflag"), 32)
                     .markerOptions(
                         MarkerOptions.builder()
                             .clickTooltip("${country.name} - 首都")

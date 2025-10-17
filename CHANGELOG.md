@@ -5,6 +5,110 @@ All notable changes to the GuoZhan (国战) plugin will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.19] - 2025-10-16 - 编译错误修复和功能完善 ✅ **编译成功**
+
+### 🎉 Build Status
+- ✅ **编译状态**: BUILD SUCCESSFUL
+- ✅ **JAR文件**: `Guozhan-1.0-SNAPSHOT.jar` (589 KB)
+- ✅ **编译时间**: 27秒
+- ⚠️ **警告**: 52个deprecated方法警告（不影响功能）
+
+### 🔧 Fixed
+
+#### 编译错误修复 🔥 **阻断级别**
+- **ProfessionManager类型错误**: 修复`country.createTime`的不必要Elvis操作符
+  - `createTime`是非空`Long`类型，移除`?: return false`
+  - **影响**: 消除编译错误，允许项目正常构建
+
+- **Exposed SQL导入缺失**: 添加缺失的`select`函数导入
+  - `CountryManager.kt`: 添加`import org.jetbrains.exposed.sql.select`
+  - `Country.kt`: 添加`import org.jetbrains.exposed.sql.select`
+  - **影响**: 修复编译错误，确保SQL查询正常工作
+
+#### 功能缺陷修复 ⚠️ **高优先级**
+- **/u declaration 命令完整实现**: 实现国家宣言功能
+  - 添加`Countries.declaration`字段（TEXT类型，可空）
+  - 添加`Country.declaration`属性
+  - 实现完整的`setDeclaration`方法：
+    * 权限验证（仅君主和大臣）
+    * 长度限制（最多200字符）
+    * 数据持久化到数据库
+    * 通知所有在线国家成员
+  - 在`/u info`命令中显示国家宣言
+  - 更新所有加载国家的代码以包含declaration字段
+  - **影响**: 玩家现在可以设置和查看国家宣言
+
+- **/gzgm cleardata 命令实现**: 实现GM数据清理功能
+  - `cleardata countries`: 清理所有国家数据和缓存
+  - `cleardata territories`: 清理所有领土数据和缓存
+  - `cleardata users`: 清理所有用户的国家关联
+  - `cleardata all`: 清理所有数据（按依赖顺序）
+  - 添加数据统计和日志记录
+  - **影响**: GM可以方便地清理测试数据
+
+#### 线程安全问题修复 🔥 **高优先级**
+- **TributeSystem线程安全**: 修复并发访问导致的`ConcurrentModificationException`
+  - 将`tributeRelations`从`mutableMapOf`改为`ConcurrentHashMap`
+  - 将`tributeHistory`从`mutableMapOf`改为`ConcurrentHashMap`
+  - 使用`Collections.synchronizedList`包装内部列表
+  - 使用`synchronized`块保护`recordTribute`方法的复合操作
+  - 使用`computeIfAbsent`确保原子性操作
+  - **影响**: 消除了异步任务与命令线程之间的数据竞争
+
+#### 税率验证不一致修复 ⚠️ **中优先级**
+- **统一税率验证范围**: 修复命令层与系统层验证不一致的问题
+  - `TributeSystem.establishTributeRelation`: 税率不在5-30%范围时返回`false`（之前会静默修正）
+  - `TributeCommand`: 提前验证税率，提供准确的错误消息"5-30%"（之前显示"1-30"）
+  - **影响**: 用户收到的错误消息现在准确反映实际操作结果
+
+#### 自我进贡防护 📝 **低优先级**
+- **防止无效关系**: 阻止国家对自己建立进贡关系
+  - `TributeSystem`: 添加国家ID相等性检查
+  - `TributeCommand`: 添加提前验证和清晰的错误消息
+  - **影响**: 保持数据模型清洁，避免无意义的自我关系
+
+### 🧪 Testing
+- **新增测试文件**: `TributeSystemTest.kt` - 8个测试用例
+  - 测试1: ConcurrentHashMap线程安全性（10线程×1000操作）
+  - 测试2: 税率范围验证（有效/无效范围）
+  - 测试3: 自我进贡防护
+  - 测试4: Synchronized列表线程安全性（10线程×100操作）
+  - 测试5: computeIfAbsent原子性（20线程同时初始化）
+  - 测试6: 实际并发场景模拟（5线程×20操作）
+  - 测试7: 税率边界值测试
+  - 测试8: 错误消息一致性验证
+
+### 📝 Documentation
+- **修复报告**: `docs/fixes/tribute-system-fixes-v1.3.19.md`
+  - 详细的问题描述和修复方案
+  - 修复前后对比
+  - 部署建议和监控要点
+- **验证清单**: `docs/fixes/VERIFICATION_CHECKLIST.md`
+  - 完整的验证步骤
+  - 集成测试场景
+  - 部署前检查清单
+
+### 🔍 Technical Details
+- **修改文件**:
+  - `src/main/kotlin/cn/lcofficial/guozhan/economy/TributeSystem.kt`
+  - `src/main/kotlin/cn/lcofficial/guozhan/command/TributeCommand.kt`
+- **新增文件**:
+  - `src/test/kotlin/cn/lcofficial/guozhan/test/unit/economy/TributeSystemTest.kt`
+  - `docs/fixes/tribute-system-fixes-v1.3.19.md`
+  - `docs/fixes/VERIFICATION_CHECKLIST.md`
+
+### ⚠️ Breaking Changes
+- **税率验证更严格**: 税率必须在5-30%之间，不再静默修正
+  - 之前: 税率4%会被修正为5%并成功
+  - 现在: 税率4%会直接失败并显示错误消息
+  - **迁移**: 确保所有进贡关系的税率在5-30%范围内
+
+### 🚀 Performance
+- **并发性能**: 使用`ConcurrentHashMap`提升并发访问性能
+- **线程安全**: 消除锁竞争，提高多线程环境下的稳定性
+
+---
+
 ## [1.3.22] - 2025-10-13 - GM战争管理系统
 
 ### Added

@@ -73,6 +73,7 @@ shield:
   min-duration-hours: 1 # 护盾最小持续时间（小时）
   max-aspect-ratio: 2.0 # 最大长宽比
   diamond-to-gold-rate: 10 # 钻石到金币的转换率（1钻石 = 10金币）
+  max-members: 50 # 护盾激活时的最大成员数量限制（测试环境：50，正式环境可调整）
 
 # 职业设置
 profession:
