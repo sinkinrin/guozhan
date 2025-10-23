@@ -226,8 +226,10 @@ object GuozhanCommand : TabExecutor {
             return
         }
 
-        if (user.rank.value < 2) {
+        // 修复权限检查：外交关系管理需要管理员权限，但创建国家的玩家应该自动获得君主权限
+        if (!user.hasCountryPermission("manage_diplomacy")) {
             sender.sendMessage("§c你没有权限管理国家外交关系！需要国家管理员或更高权限。")
+            sender.sendMessage("§7当前权限等级: ${user.rank.name} (${user.rank.value})")
             return
         }
 
@@ -859,11 +861,46 @@ object GuozhanCommand : TabExecutor {
                             }
                             setProfession(sender, args[2])
                         }
+                        "upgrade" -> {
+                            // 🔧 v1.3.38修复：添加职业升级命令
+                            upgradeProfession(sender)
+                        }
                         "info" -> showProfessionInfo(sender)
                         "list" -> listProfessions(sender)
                         else -> showProfessionHelp(sender)
                     }
                 } else sender.sendPermissionError("guozhan.command.profession")
+            }
+
+            // 🔧 v1.3.44: 新增GM战争管理功能
+            "gm" -> {
+                if (sender.hasPermission("guozhan.admin.gm")) {
+                    if (args.size < 2) {
+                        showGMHelp(sender)
+                        return
+                    }
+                    when (args[1].lowercase()) {
+                        "startwar" -> {
+                            if (args.size < 4) {
+                                sender.sendUsage("/u gm startwar <攻击国家> <防守国家>", "立即开启指定两个国家之间的战争")
+                                return
+                            }
+                            gmStartWar(sender, args[2], args[3])
+                        }
+                        "endwar" -> {
+                            if (args.size < 4) {
+                                sender.sendUsage("/u gm endwar <攻击国家> <防守国家> [胜利方]", "立即结束指定两个国家之间的战争")
+                                return
+                            }
+                            val winner = if (args.size >= 5) args[4] else null
+                            gmEndWar(sender, args[2], args[3], winner)
+                        }
+                        else -> {
+                            sender.sendError("未知的GM命令: ${args[1]}")
+                            showGMHelp(sender)
+                        }
+                    }
+                } else sender.sendPermissionError("guozhan.admin.gm")
             }
 
             "help", "?" -> showHelp(sender, args.getOrNull(1))
@@ -1089,9 +1126,55 @@ object GuozhanCommand : TabExecutor {
     }
 
     private fun reload(sender: CommandSender) {
-        // 重新加载配置
-        plugin.initialize() // 注意 plugin 需要在此处引用
-        sender.sendMessage(Message.Reload.mini())
+        // 🔧 v1.3.52: 修复热重载时数据库连接池竞态条件 - 禁止运行时热重载
+
+        // 🔧 v1.3.52: 检查是否有玩家在线
+        val onlinePlayers = org.bukkit.Bukkit.getOnlinePlayers()
+        if (onlinePlayers.isNotEmpty()) {
+            sender.sendMessage("§c无法热重载：当前有 ${onlinePlayers.size} 个玩家在线")
+            sender.sendMessage("§e热重载可能导致数据丢失，请在所有玩家离线后使用完全重启服务器的方式")
+            sender.sendMessage("§e或使用 §6/stop §e命令关闭服务器后重新启动")
+            return
+        }
+
+        // 🔧 v1.3.52: 检查是否有活跃的占领进度
+        val activeClaims = cn.lcofficial.guozhan.manager.ClaimManager.getAllActiveClaims()
+        if (activeClaims.isNotEmpty()) {
+            sender.sendMessage("§c无法热重载：当前有 ${activeClaims.size} 个活跃的占领进度")
+            sender.sendMessage("§e请等待所有占领完成后再重载，或使用完全重启服务器的方式")
+            return
+        }
+
+        // 🔧 v1.3.52: 检查是否有正在进行的科技研究
+        val researchingCount = cn.lcofficial.guozhan.manager.TechnologyManager.getResearchingCount()
+        if (researchingCount > 0) {
+            sender.sendMessage("§c无法热重载：当前有 ${researchingCount} 个正在进行的科技研究")
+            sender.sendMessage("§e请等待所有科技研究完成后再重载，或使用完全重启服务器的方式")
+            return
+        }
+
+        sender.sendMessage("§e⚠️ 警告：热重载可能导致数据不一致，建议使用完全重启服务器的方式")
+        sender.sendMessage("§e正在重载插件...")
+
+        try {
+            // 清理各个管理器的调度任务
+            cn.lcofficial.guozhan.manager.EconomyBossBarManager.cleanup()
+            cn.lcofficial.guozhan.manager.TechEffectManager.stopEffectUpdateTask()
+            cn.lcofficial.guozhan.manager.TechnologyManager.shutdown()
+
+            // 🔧 v1.3.51: 强制刷新缓存数据
+            cn.lcofficial.guozhan.manager.CountryManager.forceReloadAll()
+            cn.lcofficial.guozhan.manager.TerritoryManager.forceLoadAll()
+
+            // 重新加载配置
+            plugin.initialize()
+
+            sender.sendMessage(Message.Reload.mini())
+        } catch (e: Exception) {
+            sender.sendMessage("§c重载失败: ${e.message}")
+            plugin.logger.severe("重载插件时发生错误: ${e.message}")
+            e.printStackTrace()
+        }
     }
 
     private fun info(sender: CommandSender, countryName: String) = transaction {
@@ -1188,9 +1271,18 @@ object GuozhanCommand : TabExecutor {
         UserManager.users.clear()
         CityManager.cities.clear()
         TerritoryManager.territories.clear()
-        Bukkit.getOnlinePlayers().forEach {
-            it.kick(Message.Commands.Purge.Kick.mini())
+
+        // 🔧 v1.3.38修复：在EntityScheduler中安全踢出玩家
+        Bukkit.getOnlinePlayers().forEach { player ->
+            player.scheduler.run(cn.lcofficial.guozhan.Guozhan.instance, { _ ->
+                try {
+                    player.kick(Message.Commands.Purge.Kick.mini())
+                } catch (e: Exception) {
+                    cn.lcofficial.guozhan.Guozhan.instance.logger.warning("踢出玩家 ${player.name} 时出错: ${e.message}")
+                }
+            }, null)
         }
+
         sender.sendMessage(Message.Commands.Purge.Success.mini())
     }
 
@@ -1355,6 +1447,9 @@ object GuozhanCommand : TabExecutor {
         territory.loyalty = 0
         territory.save()
 
+        // 🔧 v1.3.24: 触发地图更新
+        Guozhan.instance.squaremapIntegration.triggerMapUpdate()
+
         sender.sendMessage("§a成功放弃了这块领土！")
     }
 
@@ -1507,13 +1602,19 @@ object GuozhanCommand : TabExecutor {
             return
         }
 
+        // 🔧 v1.3.49: 修复手动税收命令绕过安全检查 - 使用EconomyManager.collectTax()确保时间戳更新和数据库持久化
         val taxAmount = EconomyManager.collectTax(country)
+
         if (taxAmount <= 0) {
             sender.sendMessage("§c本次收税金额为0，可能是税率设置为0或没有领土！")
             return
         }
 
-        sender.sendMessage("§a成功收取了${taxAmount}单位黄金的税收！国家黄金储备：${country.gold}")
+        sender.sendMessage("§a成功收取了${taxAmount}单位税收！")
+        sender.sendMessage("§a国家资源储备 - 金币: ${country.gold}, 钻石: ${country.diamond}")
+
+        // 🔧 v1.3.49: 添加详细日志记录手动收税操作
+        cn.lcofficial.guozhan.Guozhan.instance.logger.info("🔧 [手动收税] 玩家 ${sender.name} 为国家 ${country.name} 收取了 ${taxAmount} 单位税收")
     }
 
     /**
@@ -1578,13 +1679,14 @@ object GuozhanCommand : TabExecutor {
             }
         }
 
-        if (!EconomyManager.contributeResource(sender, country, material, validAmount)) {
-            sender.sendError("你没有足够的${material.name}来上贡！")
-            return
+        // 🔧 v1.3.46: 修复上贡功能线程阻塞问题 - 使用异步回调
+        EconomyManager.contributeResource(sender, country, material, validAmount) { success ->
+            if (success) {
+                // 设置冷却时间
+                CooldownManager.setCooldown(sender, CooldownManager.CooldownType.CONTRIBUTE)
+            }
+            // 错误消息已在EconomyManager中处理，这里不需要额外处理
         }
-
-        // 设置冷却时间
-        CooldownManager.setCooldown(sender, CooldownManager.CooldownType.CONTRIBUTE)
     }
 
     /**
@@ -1628,13 +1730,15 @@ object GuozhanCommand : TabExecutor {
             }
         }
 
-        if (!EconomyManager.distributeResources(country, user, goldAmount, diamondAmount)) {
-            sender.sendMessage("§c国家资源不足或你没有权限分配资源！")
-            return
+        // 🔧 v1.3.48: 修复Critical问题4.1 - 使用异步回调模式
+        EconomyManager.distributeResources(country, user, goldAmount, diamondAmount) { success ->
+            if (success) {
+                sender.sendMessage("§a成功分配了${validAmount}单位${if (goldAmount > 0) "黄金" else "钻石"}给${targetPlayer.name}！")
+                targetPlayer.sendMessage("§a你收到了来自国家的${validAmount}单位${if (goldAmount > 0) "黄金" else "钻石"}！")
+            } else {
+                sender.sendMessage("§c国家资源不足或你没有权限分配资源！")
+            }
         }
-
-        sender.sendMessage("§a成功分配了${validAmount}单位${if (goldAmount > 0) "黄金" else "钻石"}给${targetPlayer.name}！")
-        targetPlayer.sendMessage("§a你收到了来自国家的${validAmount}单位${if (goldAmount > 0) "黄金" else "钻石"}！")
     }
 
     // ===== 新增命令实现 =====
@@ -1685,44 +1789,34 @@ object GuozhanCommand : TabExecutor {
 
     /**
      * 给玩家地图物品
+     * 🔧 v1.3.51: 使用带NBT标记的疆域地图物品，支持服务器重启后的渲染器恢复
      */
     private fun giveMapToPlayer(player: Player, mapView: org.bukkit.map.MapView) {
         try {
+            // 获取地图中心坐标
+            val centerChunk = player.location.chunk
+            val centerX = centerChunk.x
+            val centerZ = centerChunk.z
+            val worldName = player.world.name
 
-        // 创建地图物品
-        val mapItem = ItemStack(Material.FILLED_MAP)
-        val mapMeta = mapItem.itemMeta as MapMeta
-        mapMeta.mapView = mapView
-        mapMeta.displayName(Component.text("疆域地图 (15x15)").color(NamedTextColor.GOLD))
-        mapMeta.lore(listOf(
-            Component.text("显示周围15x15区块的领土状况").color(NamedTextColor.GRAY),
-            Component.text(""),
-            Component.text("§8■ §7- 无主区域").color(NamedTextColor.GRAY),
-            Component.text("§a■ §7- 你的国家").color(NamedTextColor.GREEN),
-            Component.text("§c■ §7- 敌对国家").color(NamedTextColor.RED),
-            Component.text("§9■ §7- 友好国家").color(NamedTextColor.BLUE),
-            Component.text("§e■ §7- 中立国家").color(NamedTextColor.YELLOW),
-            Component.text("§f✚ §7- 你的位置").color(NamedTextColor.WHITE),
-            Component.text(""),
-            Component.text("颜色深浅表示忠诚度高低").color(NamedTextColor.GRAY),
-            Component.text("边框样式表示接壤面数").color(NamedTextColor.GRAY),
-            Component.text("右键可刷新地图").color(NamedTextColor.YELLOW)
-        ))
-        mapItem.itemMeta = mapMeta
+            // 🔧 v1.3.51: 使用新的带NBT标记的地图物品创建方法
+            val mapItem = cn.lcofficial.guozhan.util.TerritoryMapUtil.createTerritoryMapItem(
+                player, mapView, centerX, centerZ, worldName
+            )
 
-        // 给玩家地图物品
-        val result = player.inventory.addItem(mapItem)
-        if (result.isNotEmpty()) {
-            // 背包满了，掉落到地上
-            player.world.dropItem(player.location, mapItem)
-            player.sendSuccess("已获得疆域地图！（背包已满，物品已掉落）")
-        } else {
-            player.sendSuccess("已获得疆域地图！")
-        }
+            // 给玩家地图物品
+            val result = player.inventory.addItem(mapItem)
+            if (result.isNotEmpty()) {
+                // 背包满了，掉落到地上
+                player.world.dropItem(player.location, mapItem)
+                player.sendSuccess("已获得疆域地图！（背包已满，物品已掉落）")
+            } else {
+                player.sendSuccess("已获得疆域地图！")
+            }
 
-        // 显示地图说明
-        player.sendInfo("使用地图查看周围15x15区块的领土状况")
-        player.sendInfo("白色十字标记表示你的当前位置")
+            // 显示地图说明
+            player.sendInfo("使用地图查看周围15x15区块的领土状况")
+            player.sendInfo("白色十字标记表示你的当前位置")
 
         } catch (e: Exception) {
             cn.lcofficial.guozhan.Guozhan.instance.logger.severe("给予地图物品时发生异常: ${e.message}")
@@ -1992,12 +2086,13 @@ object GuozhanCommand : TabExecutor {
                     return
                 }
 
-                // 激活护盾
-                val success = ShieldManager.activateShield(country, hours)
-                if (success) {
-                    sender.sendMessage("§a[护盾系统] 国家护盾已成功激活${hours}小时！")
-                } else {
-                    sender.sendMessage("§c[护盾系统] 护盾激活失败，请稍后重试")
+                // 🔧 v1.3.47: 修复护盾激活线程阻塞问题 - 使用异步回调
+                ShieldManager.activateShield(country, hours) { success ->
+                    if (success) {
+                        sender.sendMessage("§a[护盾系统] 国家护盾已成功激活${hours}小时！")
+                    } else {
+                        sender.sendMessage("§c[护盾系统] 护盾激活失败，请稍后重试")
+                    }
                 }
             }
             "off" -> {
@@ -2183,6 +2278,9 @@ object GuozhanCommand : TabExecutor {
 
         // 4. 删除国家数据
         CountryManager.deleteCountry(country)
+
+        // 🔧 代码审查修复: 触发地图更新以立即移除领土标记
+        Guozhan.instance.squaremapIntegration.triggerMapUpdate()
 
         // 5. 全服广播
         Bukkit.broadcastMessage("§c§l[国战] 国家 '${countryName}' 已被解散！")
@@ -2414,26 +2512,29 @@ object GuozhanCommand : TabExecutor {
             return
         }
 
-        if (TechnologyManager.startResearch(country, technologyId)) {
-            val targetLevel = TechnologyManager.getCountryTechLevel(country, technologyId) + 1
-            sender.sendSuccess("成功开始研究科技 '${technology.name}' 等级 $targetLevel")
+        // 🔧 v1.3.47: 修复科技研究线程阻塞问题 - 使用异步回调
+        TechnologyManager.startResearch(country, technologyId) { success ->
+            if (success) {
+                val targetLevel = TechnologyManager.getCountryTechLevel(country, technologyId) + 1
+                sender.sendSuccess("成功开始研究科技 '${technology.name}' 等级 $targetLevel")
 
-            // 计算研究时间
-            val researchTime = cn.lcofficial.guozhan.config.TechnologyConfig.calculateResearchTime(technology, targetLevel)
-            val hours = researchTime / (1000 * 60 * 60)
-            val minutes = (researchTime % (1000 * 60 * 60)) / (1000 * 60)
-            sender.sendInfo("预计完成时间: ${hours}小时${minutes}分钟")
+                // 计算研究时间
+                val researchTime = cn.lcofficial.guozhan.config.TechnologyConfig.calculateResearchTime(technology, targetLevel)
+                val hours = researchTime / (1000 * 60 * 60)
+                val minutes = (researchTime % (1000 * 60 * 60)) / (1000 * 60)
+                sender.sendInfo("预计完成时间: ${hours}小时${minutes}分钟")
 
-            // 显示研究完成后的效果预览
-            val effects = technology.getEffects(targetLevel)
-            if (effects.isNotEmpty()) {
-                sender.sendInfo("研究完成后将获得以下效果:")
-                effects.forEach { effect ->
-                    sender.sendMessage("§f  - ${effect.getDescription()}")
+                // 显示研究完成后的效果预览
+                val effects = technology.getEffects(targetLevel)
+                if (effects.isNotEmpty()) {
+                    sender.sendInfo("研究完成后将获得以下效果:")
+                    effects.forEach { effect ->
+                        sender.sendMessage("§f  - ${effect.getDescription()}")
+                    }
                 }
+            } else {
+                sender.sendError("开始研究失败，请稍后重试")
             }
-        } else {
-            sender.sendError("开始研究失败，请稍后重试")
         }
     }
 
@@ -2669,19 +2770,33 @@ object GuozhanCommand : TabExecutor {
         country.gold -= totalCost
         country.save()
 
-        // 恢复所有受损领土的忠诚度
-        var restoredCount = 0
-        damagedTerritories.forEach { territory ->
-            territory.loyalty = 100
-            territory.save()
-            restoredCount++
+        // 🔧 v1.3.48: 修复High问题3 - 忠诚度恢复命令线程安全问题
+        // 将所有共享状态修改封装在GlobalRegionScheduler中
+        val currentTime = System.currentTimeMillis()
+
+        cn.lcofficial.guozhan.util.run {
+            var restoredCount = 0
+            damagedTerritories.forEach { territory ->
+                val oldLoyalty = territory.loyalty
+                territory.loyalty = 100
+                // 🔧 v1.3.38修复：关键修复 - 更新时间戳，确保恢复后不会立即进入衰减检查
+                territory.lastLoyaltyUpdateTime = currentTime
+                territory.save()
+                restoredCount++
+            }
+
+            // 在GlobalRegionScheduler中完成后，再回到EntityScheduler通知玩家
+            sender.scheduler.run(cn.lcofficial.guozhan.Guozhan.instance, { _ ->
+                sender.sendMessage("§a已恢复 $restoredCount 块领土的忠诚度")
+                cn.lcofficial.guozhan.Guozhan.instance.logger.info("🔧 [忠诚度恢复] 玩家 ${sender.name} 恢复了 $restoredCount 块领土的忠诚度")
+            }, null)
         }
 
-        sender.sendSuccess("成功恢复了 ${restoredCount} 块疆土的民心！")
-        sender.sendInfo("消耗了 ${totalCost} 金币，剩余国库: ${country.gold} 金币")
-
-        // 记录日志
-        Guozhan.instance.logger.info("[忠诚度系统] ${sender.name} 为国家 ${country.name} 恢复了 ${restoredCount} 块疆土的民心，消耗 ${totalCost} 金币")
+        // 🔧 v1.3.48: 在EntityScheduler中发送最终消息
+        sender.scheduler.run(cn.lcofficial.guozhan.Guozhan.instance, { _ ->
+            sender.sendSuccess("成功恢复了疆土的民心！")
+            sender.sendInfo("消耗了 ${totalCost} 金币，剩余国库: ${country.gold} 金币")
+        }, null)
     }
 
     /**
@@ -3335,6 +3450,7 @@ object GuozhanCommand : TabExecutor {
     private fun showProfessionHelp(sender: CommandSender) {
         sender.sendInfo("=== 职业系统 ===")
         sender.sendInfo("/u profession set <职业> - 设置职业")
+        sender.sendInfo("/u profession upgrade - 升级职业")
         sender.sendInfo("/u profession info - 查看当前职业信息")
         sender.sendInfo("/u profession list - 查看所有职业")
         sender.sendInfo("")
@@ -3378,6 +3494,19 @@ object GuozhanCommand : TabExecutor {
             return
         }
 
+        // 🔧 v1.3.38修复：添加职业解锁冷却时间检查
+        if (!cn.lcofficial.guozhan.manager.ProfessionManager.canSetProfession(user)) {
+            val country = user.country!!
+            val unlockDelayHours = cn.lcofficial.guozhan.config.Config.Profession.unlockDelayHours
+            val hoursSinceCreation = (System.currentTimeMillis() - country.createTime) / (1000 * 60 * 60)
+            val remainingHours = unlockDelayHours - hoursSinceCreation
+
+            sender.sendError("职业系统尚未解锁！")
+            sender.sendInfo("国家创建后需要等待 ${unlockDelayHours} 小时才能选择职业")
+            sender.sendInfo("剩余时间: ${remainingHours} 小时")
+            return
+        }
+
         // 设置职业
         cn.lcofficial.guozhan.manager.ProfessionManager.setProfession(user, profession)
 
@@ -3387,6 +3516,71 @@ object GuozhanCommand : TabExecutor {
 
         // 记录日志
         Guozhan.instance.logger.info("[职业系统] ${sender.name} 选择了职业: $professionDisplayName")
+    }
+
+    /**
+     * 🔧 v1.3.38修复：添加职业升级方法，包含完整的冷却时间检查
+     */
+    private fun upgradeProfession(sender: CommandSender) {
+        if (sender !is Player) {
+            sender.sendMessage(Message.OnlyPlayer.mini())
+            return
+        }
+
+        val user = sender.user()
+        if (user.country == null) {
+            sender.sendError("你必须先加入一个国家才能升级职业！")
+            return
+        }
+
+        // 检查是否有职业
+        if (user.profession == null) {
+            sender.sendError("你还没有选择职业！")
+            sender.sendUsage("/u profession set <职业>", "先选择一个职业")
+            return
+        }
+
+        // 检查是否已达到最高等级
+        if (user.professionLevel >= 2) {
+            sender.sendWarning("你的职业已经达到最高等级！")
+            return
+        }
+
+        // 🔧 v1.3.38修复：添加职业升级冷却时间检查
+        if (!cn.lcofficial.guozhan.manager.ProfessionManager.canUpgradeProfession(user)) {
+            val remainingMs = cn.lcofficial.guozhan.manager.ProfessionManager.getUpgradeCooldownRemaining(user)
+            val remainingHours = remainingMs / (1000 * 60 * 60)
+            val remainingMinutes = (remainingMs % (1000 * 60 * 60)) / (1000 * 60)
+
+            sender.sendError("职业升级冷却中！")
+            sender.sendInfo("职业设置后需要等待 ${cn.lcofficial.guozhan.config.Config.Profession.upgradeDelayHours} 小时才能升级")
+            sender.sendInfo("剩余时间: ${remainingHours} 小时 ${remainingMinutes} 分钟")
+            return
+        }
+
+        // 🔧 v1.3.40: 修复职业成本不一致 - 检查钻石而不是金币，使用正确的成本来源
+        val upgradeCost = cn.lcofficial.guozhan.manager.ProfessionManager.getUpgradeCost()
+        if (user.country!!.diamond < upgradeCost) {
+            sender.sendError("国库钻石不足！")
+            sender.sendInfo("升级到等级 ${user.professionLevel + 1} 需要 ${upgradeCost} 钻石")
+            sender.sendInfo("当前国库: ${user.country!!.diamond} 钻石")
+            return
+        }
+
+        // 🔧 v1.3.47: 修复职业升级线程阻塞问题 - 使用异步回调
+        cn.lcofficial.guozhan.manager.ProfessionManager.upgradeProfession(user) { success ->
+            if (success) {
+                val professionDisplayName = cn.lcofficial.guozhan.manager.ProfessionManager.getProfessionName(user.profession!!)
+                sender.sendSuccess("成功升级职业: $professionDisplayName 到等级 ${user.professionLevel}！")
+                sender.sendInfo("消耗了 ${upgradeCost} 钻石，剩余国库: ${user.country!!.diamond} 钻石")
+                sender.sendInfo("职业效果已更新！")
+
+                // 记录日志
+                Guozhan.instance.logger.info("[职业系统] ${sender.name} 升级职业 $professionDisplayName 到等级 ${user.professionLevel}")
+            } else {
+                sender.sendError("职业升级失败！请检查资源和条件")
+            }
+        }
     }
 
     /**
@@ -3436,6 +3630,163 @@ object GuozhanCommand : TabExecutor {
         sender.sendInfo("§e征服者 (Conqueror)§f - 特殊征服能力，适合领土扩张")
         sender.sendInfo("")
         sender.sendInfo("使用 /u profession set <职业> 来选择职业")
+    }
+
+    // ==================== GM战争管理功能 ====================
+    // 🔧 v1.3.44: 新增GM战争管理功能
+
+    /**
+     * 显示GM命令帮助信息
+     */
+    private fun showGMHelp(sender: CommandSender) {
+        sender.sendInfo("=== GM战争管理命令 ===")
+        sender.sendInfo("§c/u gm startwar <攻击国家> <防守国家>§f - 立即开启战争")
+        sender.sendInfo("§c/u gm endwar <攻击国家> <防守国家> [胜利方]§f - 立即结束战争")
+        sender.sendInfo("")
+        sender.sendInfo("§7注意：这些命令需要 guozhan.admin.gm 权限")
+        sender.sendInfo("§7胜利方参数可选，不指定则视为平局结束")
+    }
+
+    /**
+     * GM命令：一键开启战争
+     * 🔧 v1.3.44: 新增GM战争管理功能
+     */
+    private fun gmStartWar(sender: CommandSender, attackerName: String, defenderName: String) {
+        // 查找攻击方国家
+        val attackerCountry = CountryManager.getByName(attackerName)
+        if (attackerCountry == null) {
+            sender.sendError("找不到攻击方国家: $attackerName")
+            return
+        }
+
+        // 查找防守方国家
+        val defenderCountry = CountryManager.getByName(defenderName)
+        if (defenderCountry == null) {
+            sender.sendError("找不到防守方国家: $defenderName")
+            return
+        }
+
+        // 检查是否为同一个国家
+        if (attackerCountry.id == defenderCountry.id) {
+            sender.sendError("不能让同一个国家与自己开战")
+            return
+        }
+
+        // 检查是否已经在战争中
+        if (WarManager.isAtWar(attackerCountry, defenderCountry)) {
+            sender.sendWarning("${attackerCountry.name} 与 ${defenderCountry.name} 已经处于战争状态")
+            return
+        }
+
+        // 🔧 v1.3.44: 使用GlobalRegionScheduler确保线程安全
+        cn.lcofficial.guozhan.util.run {
+            try {
+                // 使用WarManager的GM模式开启战争
+                WarManager.startWarGM(attackerCountry, defenderCountry)
+
+                // 记录GM操作日志
+                cn.lcofficial.guozhan.Guozhan.instance.logger.info("🔧 [GM战争] 管理员 ${sender.name} 手动开启战争：${attackerCountry.name} vs ${defenderCountry.name}")
+
+                // 发送成功消息
+                sender.sendSuccess("§c[GM模式] §f已成功开启 §e${attackerCountry.name} §f与 §e${defenderCountry.name} §f之间的战争！")
+                sender.sendInfo("战争已立即生效，跳过了准备阶段")
+
+            } catch (e: Exception) {
+                sender.sendError("开启战争时发生错误: ${e.message}")
+                cn.lcofficial.guozhan.Guozhan.instance.logger.severe("❌ [GM战争] 开启战争失败: ${e.message}")
+                e.printStackTrace()
+            }
+        }
+    }
+
+    /**
+     * GM命令：一键结束战争
+     * 🔧 v1.3.44: 新增GM战争管理功能
+     */
+    private fun gmEndWar(sender: CommandSender, attackerName: String, defenderName: String, winnerName: String?) {
+        // 查找攻击方国家
+        val attackerCountry = CountryManager.getByName(attackerName)
+        if (attackerCountry == null) {
+            sender.sendError("找不到攻击方国家: $attackerName")
+            return
+        }
+
+        // 查找防守方国家
+        val defenderCountry = CountryManager.getByName(defenderName)
+        if (defenderCountry == null) {
+            sender.sendError("找不到防守方国家: $defenderName")
+            return
+        }
+
+        // 检查是否处于战争状态
+        if (!WarManager.isAtWar(attackerCountry, defenderCountry)) {
+            sender.sendWarning("${attackerCountry.name} 与 ${defenderCountry.name} 当前不处于战争状态")
+            return
+        }
+
+        // 查找胜利方国家（如果指定了）
+        var winnerCountry: Country? = null
+        if (winnerName != null) {
+            winnerCountry = CountryManager.getByName(winnerName)
+            if (winnerCountry == null) {
+                sender.sendError("找不到胜利方国家: $winnerName")
+                return
+            }
+
+            // 检查胜利方是否为参战方之一
+            if (winnerCountry.id != attackerCountry.id && winnerCountry.id != defenderCountry.id) {
+                sender.sendError("胜利方必须是参战方之一（${attackerCountry.name} 或 ${defenderCountry.name}）")
+                return
+            }
+        }
+
+        // 🔧 v1.3.44: 使用GlobalRegionScheduler确保线程安全
+        cn.lcofficial.guozhan.util.run {
+            try {
+                // 如果指定了胜利方，应用战争奖励
+                if (winnerCountry != null) {
+                    // 为胜利方的所有在线玩家应用胜利效果
+                    Bukkit.getOnlinePlayers().forEach { player ->
+                        val user = player.user()
+                        val playerCountry = user.country
+                        if (playerCountry?.id == winnerCountry.id) {
+                            // 胜利方玩家获得胜利效果
+                            cn.lcofficial.guozhan.effect.WarEffects.applyVictoryEffects(player)
+                        } else if (playerCountry?.id == (if (winnerCountry.id == attackerCountry.id) defenderCountry.id else attackerCountry.id)) {
+                            // 失败方玩家获得失败效果
+                            cn.lcofficial.guozhan.effect.WarEffects.applyDefeatEffects(player)
+                        }
+                    }
+
+                    cn.lcofficial.guozhan.Guozhan.instance.logger.info("🔧 [GM战争] 已为胜利方 ${winnerCountry.name} 应用战争奖励")
+                }
+
+                // 结束战争
+                WarManager.endWar(attackerCountry, defenderCountry, winnerCountry)
+
+                // 记录GM操作日志
+                val winnerInfo = if (winnerCountry != null) "，胜利方：${winnerCountry.name}" else "，平局结束"
+                cn.lcofficial.guozhan.Guozhan.instance.logger.info("🔧 [GM战争] 管理员 ${sender.name} 手动结束战争：${attackerCountry.name} vs ${defenderCountry.name}$winnerInfo")
+
+                // 发送成功消息
+                val resultMessage = if (winnerCountry != null) {
+                    "§e${winnerCountry.name} §f获得胜利"
+                } else {
+                    "平局结束"
+                }
+                sender.sendSuccess("§c[GM模式] §f已成功结束 §e${attackerCountry.name} §f与 §e${defenderCountry.name} §f之间的战争！")
+                sender.sendInfo("战争结果：$resultMessage")
+
+                if (winnerCountry != null) {
+                    sender.sendInfo("战争奖励已发放给胜利方玩家")
+                }
+
+            } catch (e: Exception) {
+                sender.sendError("结束战争时发生错误: ${e.message}")
+                cn.lcofficial.guozhan.Guozhan.instance.logger.severe("❌ [GM战争] 结束战争失败: ${e.message}")
+                e.printStackTrace()
+            }
+        }
     }
 
 }

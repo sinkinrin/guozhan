@@ -7,6 +7,7 @@ api-version: 1.21
 softdepend:
   - ProtocolLib
   - PlaceholderAPI
+  - squaremap
 commands:
   u:
     description: '国战主命令'
@@ -119,27 +120,34 @@ permissions:
       guozhan.command.contribute: true
       guozhan.command.claim: true
       guozhan.command.unclaim: true
-      guozhan.command.invite: true
-      guozhan.command.accept: true
-      guozhan.command.decline: true
-      guozhan.command.leave: true
-      guozhan.command.kick: true
-      guozhan.command.promote: true
-      guozhan.command.demote: true
-      guozhan.command.transfer: true
-      guozhan.command.rename: true
-      guozhan.command.move: true
-      guozhan.command.return: true
-      guozhan.command.treasury: true
-      guozhan.command.map: true
-      guozhan.command.claimmode: true
-      guozhan.command.war: true
-      guozhan.command.shield: true
-      guozhan.command.tech: true
-      guozhan.command.declaration: true
-      guozhan.command.title: true
-      guozhan.command.profession: true
-      guozhan.command.reload: true
+  guozhan.command.harvest: true
+  guozhan.command.tax: true
+  guozhan.command.distribute: true
+  guozhan.command.diplomacy: true
+  guozhan.command.invite: true
+  guozhan.command.accept: true
+  guozhan.command.decline: true
+  guozhan.command.leave: true
+  guozhan.command.kick: true
+  guozhan.command.promote: true
+  guozhan.command.demote: true
+  guozhan.command.transfer: true
+  guozhan.command.rename: true
+  guozhan.command.move: true
+  guozhan.command.joinmode: true
+  guozhan.command.restore: true
+  guozhan.command.disband: true
+  guozhan.command.return: true
+  guozhan.command.treasury: true
+  guozhan.command.map: true
+  guozhan.command.claimmode: true
+  guozhan.command.war: true
+  guozhan.command.shield: true
+  guozhan.command.tech: true
+  guozhan.command.declaration: true
+  guozhan.command.title: true
+  guozhan.command.profession: true
+  guozhan.command.reload: true
   guozhan.command.create:
     description: '创建国家权限'
     default: true
@@ -157,6 +165,18 @@ permissions:
     default: true
   guozhan.command.unclaim:
     description: '放弃领土权限'
+    default: true
+  guozhan.command.harvest:
+    description: '收获领土地块资源权限'
+    default: true
+  guozhan.command.tax:
+    description: '管理国家税收权限'
+    default: true
+  guozhan.command.distribute:
+    description: '向成员分配国家资源权限'
+    default: true
+  guozhan.command.diplomacy:
+    description: '管理国家外交关系权限'
     default: true
   guozhan.command.invite:
     description: '邀请玩家权限'
@@ -187,6 +207,15 @@ permissions:
     default: true
   guozhan.command.move:
     description: '迁移王城权限'
+    default: true
+  guozhan.command.joinmode:
+    description: '调整国家加入模式权限'
+    default: true
+  guozhan.command.restore:
+    description: '恢复领土忠诚度权限'
+    default: true
+  guozhan.command.disband:
+    description: '解散国家权限'
     default: true
   guozhan.command.return:
     description: '回到王城权限'

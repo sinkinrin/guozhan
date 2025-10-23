@@ -179,6 +179,7 @@ object CoreManager {
 
     /**
      * 检查玩家是否可以攻击核心
+     * 🔧 v1.3.32: 修复护盾系统异常 - 添加护盾状态检查
      */
     private fun canAttackCore(player: Player, country: Country): Boolean {
         val attackerUser = UserManager.getUser(player.uniqueId)
@@ -186,6 +187,25 @@ object CoreManager {
         // 不能攻击自己国家的核心
         if (attackerUser?.country?.id == country.id) {
             return false
+        }
+
+        // 🔧 v1.3.32: 关键修复 - 检查护盾状态
+        // 如果目标国家开启了护盾，则无法攻击核心（除非在王战期间）
+        if (ShieldManager.isShieldActive(country)) {
+            // 🔧 v1.3.48: 修复问题3 - 重用Guozhan.instance.warScheduler实例，避免每次创建新实例导致isWarTime()始终返回false
+            // 检查是否在王战期间，王战期间护盾不生效
+            if (!Guozhan.instance.warScheduler.isWarTime()) {
+                val remainingTime = ShieldManager.getShieldRemainingTime(country)
+                val remainingHours = remainingTime / (60 * 60 * 1000)
+                val remainingMinutes = (remainingTime % (60 * 60 * 1000)) / (60 * 1000)
+
+                player.sendMessage("§c该国家已开启护盾保护，无法攻击核心！")
+                player.sendMessage("§c护盾剩余时间: ${remainingHours}小时${remainingMinutes}分钟")
+                player.sendMessage("§7护盾在王战期间不生效，请等待王战时间或护盾到期")
+                return false
+            } else {
+                player.sendMessage("§e王战期间，护盾不生效！")
+            }
         }
 
         // 检查是否需要宣战
@@ -264,16 +284,87 @@ object CoreManager {
 
     /**
      * 核心被摧毁时的处理
+     * 🔧 v1.3.35: 修复核心摧毁后无法占领的问题 - 删除国家并清理领土所有权
+     * 🔧 v1.3.48: 修复问题2 - 核心摧毁后删除视觉效果（信标和保护玻璃）
      */
     private fun onCoreDestroyed(country: Country, destroyer: Player) {
         // 广播核心被摧毁的消息
         val message = "§c${country.name} 的核心已被 ${destroyer.name} 摧毁！该国家现在可以被占领！"
-        Bukkit.broadcastMessage(message)
+        // 🔧 v1.3.35: 修复弃用警告 - 使用现代API发送广播消息
+        Bukkit.getOnlinePlayers().forEach { player ->
+            player.sendMessage(message)
+        }
+
+        // 🔧 v1.3.48: 修复问题2 - 删除核心视觉效果（信标和保护玻璃）
+        val coreLocation = country.getCoreLocation()
+        if (coreLocation != null) {
+            // 使用RegionScheduler在正确的线程中删除方块
+            Bukkit.getRegionScheduler().run(Guozhan.instance, coreLocation) { _ ->
+                try {
+                    pluginLogger.info("🔧 [核心摧毁] 开始删除国家 ${country.name} 的核心视觉效果")
+
+                    // 删除中心信标
+                    if (coreLocation.block.type == Material.BEACON) {
+                        coreLocation.block.type = Material.AIR
+                        pluginLogger.info("🔧 [核心摧毁] 已删除核心信标 at ${coreLocation.blockX}, ${coreLocation.blockY}, ${coreLocation.blockZ}")
+                    }
+
+                    // 删除周围的保护玻璃（3x3x3立方体，除了中心）
+                    var glassRemoved = 0
+                    for (x in -1..1) {
+                        for (y in -1..1) {
+                            for (z in -1..1) {
+                                if (x == 0 && y == 0 && z == 0) continue // 跳过中心位置（已处理信标）
+                                val glassLocation = coreLocation.clone().add(x.toDouble(), y.toDouble(), z.toDouble())
+                                if (glassLocation.block.type == Material.GLASS) {
+                                    glassLocation.block.type = Material.AIR
+                                    glassRemoved++
+                                }
+                            }
+                        }
+                    }
+
+                    pluginLogger.info("🔧 [核心摧毁] 已删除 ${glassRemoved} 个保护玻璃方块")
+                    pluginLogger.info("🔧 [核心摧毁] 国家 ${country.name} 的核心视觉效果删除完成")
+
+                } catch (e: Exception) {
+                    pluginLogger.severe("🔧 [核心摧毁] 删除国家 ${country.name} 的核心视觉效果时出错: ${e.message}")
+                    e.printStackTrace()
+                }
+            }
+        } else {
+            pluginLogger.warning("🔧 [核心摧毁] 国家 ${country.name} 没有核心位置信息，无法删除视觉效果")
+        }
 
         // 移除BossBar
         removeBossBar(country)
 
         pluginLogger.info("国家 ${country.name} 的核心被玩家 ${destroyer.name} 摧毁")
+
+        // 🔧 v1.3.35: 关键修复 - 删除被摧毁的国家，这会自动清理所有领土所有权
+        try {
+            // 在异步线程中执行数据库操作，避免阻塞主线程
+            Bukkit.getAsyncScheduler().runNow(Guozhan.instance) { _ ->
+                try {
+                    CountryManager.deleteCountry(country)
+                    pluginLogger.info("[核心摧毁] 已删除国家 ${country.name}，所有领土现在可以被占领")
+
+                    // 通知所有在线玩家（使用 Folia 兼容的调度器）
+                    cn.lcofficial.guozhan.util.run { _ ->
+                        val message = "§a${country.name} 的所有领土现在可以被占领！"
+                        Bukkit.getOnlinePlayers().forEach { player ->
+                            player.sendMessage(message)
+                        }
+                    }
+                } catch (e: Exception) {
+                    pluginLogger.severe("[核心摧毁] 删除国家 ${country.name} 时出错: ${e.message}")
+                    e.printStackTrace()
+                }
+            }
+        } catch (e: Exception) {
+            pluginLogger.severe("[核心摧毁] 启动异步删除任务时出错: ${e.message}")
+            e.printStackTrace()
+        }
     }
 
     /**
@@ -512,6 +603,28 @@ object CoreManager {
             coreLocation.world.name == location.world.name &&
             coreLocation.distance(location) <= 2.0 // 2格范围内认为是核心区域
         }
+    }
+
+    /**
+     * 清理单个国家的核心相关资源
+     * 🔧 v1.3.30: 新增方法，用于删除国家时清理该国家的资源，而不影响其他国家
+     * @param countryId 要清理的国家ID
+     */
+    fun cleanupCountry(countryId: UUID) {
+        // 移除该国家的 BossBar
+        countryBossBars[countryId]?.let { bossBar ->
+            bossBar.removeAll()
+            countryBossBars.remove(countryId)
+            pluginLogger.info("已移除国家 $countryId 的 BossBar")
+        }
+
+        // 清除该国家的 BossBar 显示缓存
+        bossBarDisplayCache.remove(countryId)
+
+        // 清除该国家的上次更新时间
+        lastBossBarUpdateTime.remove(countryId)
+
+        pluginLogger.info("已清理国家 $countryId 的核心相关资源")
     }
 
     /**

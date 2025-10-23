@@ -2,8 +2,8 @@ package cn.lcofficial.guozhan.data
 
 import org.jetbrains.exposed.dao.id.IdTable
 import org.jetbrains.exposed.dao.id.EntityID
+import org.jetbrains.exposed.sql.replace
 import org.jetbrains.exposed.sql.transactions.transaction
-import org.jetbrains.exposed.sql.update
 import java.util.*
 
 object TerritoryBlocks : IdTable<String>("gz_territory_blocks") {
@@ -155,17 +155,63 @@ class TerritoryBlock(
         return coreHealth
     }
     
-    fun save() = transaction {
-        TerritoryBlocks.update({ TerritoryBlocks.id eq id.toString() }) {
-            it[TerritoryBlocks.loyalty] = loyalty
-            it[TerritoryBlocks.owner] = ownerId?.let { EntityID(it.toString(), Countries) }
-            it[TerritoryBlocks.resourceType] = resourceType
-            it[TerritoryBlocks.resourceAmount] = resourceAmount
-            it[TerritoryBlocks.lastHarvestTime] = lastHarvestTime
-            it[TerritoryBlocks.lastLoyaltyUpdateTime] = lastLoyaltyUpdateTime
-            it[TerritoryBlocks.isCapital] = isCapital
-            it[TerritoryBlocks.coreHealth] = coreHealth
-            it[TerritoryBlocks.lastCoreHealthUpdateTime] = lastCoreHealthUpdateTime
+    /**
+     * 保存领土区块数据到数据库
+     * 🔧 v1.3.25: 改为异步执行，避免阻塞 region 线程
+     * 🔧 v1.3.48: 修复数据丢失风险 - 添加同步保存选项和返回值
+     */
+    fun save(async: Boolean = true): Boolean {
+        return if (async) {
+            // 异步保存，返回true表示任务已提交（不保证成功）
+            cn.lcofficial.guozhan.util.async { _ ->
+                try {
+                    saveInTransaction()
+                } catch (e: Exception) {
+                    cn.lcofficial.guozhan.Guozhan.instance.logger.severe(
+                        "异步保存领土区块失败 (${id}): ${e.message}"
+                    )
+                    e.printStackTrace()
+                }
+            }
+            true
+        } else {
+            // 同步保存，返回实际保存结果
+            try {
+                saveInTransaction()
+                true
+            } catch (e: Exception) {
+                cn.lcofficial.guozhan.Guozhan.instance.logger.severe(
+                    "同步保存领土区块失败 (${id}): ${e.message}"
+                )
+                e.printStackTrace()
+                false
+            }
+        }
+    }
+
+    /**
+     * 🔧 v1.3.48: 新增事务内保存方法，供同步和异步保存共用
+     * 设为internal以便LoyaltySystem等内部类调用
+     */
+    internal fun saveInTransaction() {
+        transaction {
+            val ownerEntityId = ownerId?.let { EntityID(it.toString(), Countries) }
+
+            TerritoryBlocks.replace { row ->
+                row[TerritoryBlocks.id] = this@TerritoryBlock.id.toString()
+                row[TerritoryBlocks.x] = this@TerritoryBlock.x
+                row[TerritoryBlocks.z] = this@TerritoryBlock.z
+                row[TerritoryBlocks.world] = this@TerritoryBlock.world
+                row[TerritoryBlocks.loyalty] = this@TerritoryBlock.loyalty
+                row[TerritoryBlocks.owner] = ownerEntityId
+                row[TerritoryBlocks.resourceType] = this@TerritoryBlock.resourceType
+                row[TerritoryBlocks.resourceAmount] = this@TerritoryBlock.resourceAmount
+                row[TerritoryBlocks.lastHarvestTime] = this@TerritoryBlock.lastHarvestTime
+                row[TerritoryBlocks.lastLoyaltyUpdateTime] = this@TerritoryBlock.lastLoyaltyUpdateTime
+                row[TerritoryBlocks.isCapital] = this@TerritoryBlock.isCapital
+                row[TerritoryBlocks.coreHealth] = this@TerritoryBlock.coreHealth
+                row[TerritoryBlocks.lastCoreHealthUpdateTime] = this@TerritoryBlock.lastCoreHealthUpdateTime
+            }
         }
     }
 }

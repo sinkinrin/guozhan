@@ -96,6 +96,176 @@ object TerritoryMapUtil {
             e.printStackTrace()
         }
     }
+
+    /**
+     * 🔧 v1.3.51: 创建带NBT标记的疆域地图物品
+     * @param player 玩家
+     * @param mapView 地图视图
+     * @param centerX 中心X坐标
+     * @param centerZ 中心Z坐标
+     * @param worldName 世界名称
+     * @return 地图物品
+     */
+    fun createTerritoryMapItem(player: Player, mapView: org.bukkit.map.MapView, centerX: Int, centerZ: Int, worldName: String): org.bukkit.inventory.ItemStack {
+        val mapItem = org.bukkit.inventory.ItemStack(org.bukkit.Material.FILLED_MAP)
+        val mapMeta = mapItem.itemMeta as org.bukkit.inventory.meta.MapMeta
+        mapMeta.mapView = mapView
+        mapMeta.displayName(net.kyori.adventure.text.Component.text("疆域地图 (15x15)").color(net.kyori.adventure.text.format.NamedTextColor.GOLD))
+        mapMeta.lore(listOf(
+            net.kyori.adventure.text.Component.text("显示周围15x15区块的领土状况").color(net.kyori.adventure.text.format.NamedTextColor.GRAY),
+            net.kyori.adventure.text.Component.text(""),
+            net.kyori.adventure.text.Component.text("§8■ §7- 无主区域").color(net.kyori.adventure.text.format.NamedTextColor.GRAY),
+            net.kyori.adventure.text.Component.text("§a■ §7- 你的国家").color(net.kyori.adventure.text.format.NamedTextColor.GREEN),
+            net.kyori.adventure.text.Component.text("§c■ §7- 敌对国家").color(net.kyori.adventure.text.format.NamedTextColor.RED),
+            net.kyori.adventure.text.Component.text("§9■ §7- 友好国家").color(net.kyori.adventure.text.format.NamedTextColor.BLUE),
+            net.kyori.adventure.text.Component.text("§e■ §7- 中立国家").color(net.kyori.adventure.text.format.NamedTextColor.YELLOW),
+            net.kyori.adventure.text.Component.text("§f✚ §7- 你的位置").color(net.kyori.adventure.text.format.NamedTextColor.WHITE),
+            net.kyori.adventure.text.Component.text(""),
+            net.kyori.adventure.text.Component.text("颜色深浅表示忠诚度高低").color(net.kyori.adventure.text.format.NamedTextColor.GRAY),
+            net.kyori.adventure.text.Component.text("边框样式表示接壤面数").color(net.kyori.adventure.text.format.NamedTextColor.GRAY),
+            net.kyori.adventure.text.Component.text("右键可刷新地图").color(net.kyori.adventure.text.format.NamedTextColor.YELLOW)
+        ))
+
+        // 🔧 v1.3.51: 添加NBT标记来识别疆域地图
+        val pdc = mapMeta.persistentDataContainer
+        pdc.set(
+            org.bukkit.NamespacedKey(cn.lcofficial.guozhan.Guozhan.instance, "territory_map"),
+            org.bukkit.persistence.PersistentDataType.STRING,
+            "true"
+        )
+        pdc.set(
+            org.bukkit.NamespacedKey(cn.lcofficial.guozhan.Guozhan.instance, "center_x"),
+            org.bukkit.persistence.PersistentDataType.INTEGER,
+            centerX
+        )
+        pdc.set(
+            org.bukkit.NamespacedKey(cn.lcofficial.guozhan.Guozhan.instance, "center_z"),
+            org.bukkit.persistence.PersistentDataType.INTEGER,
+            centerZ
+        )
+        pdc.set(
+            org.bukkit.NamespacedKey(cn.lcofficial.guozhan.Guozhan.instance, "world_name"),
+            org.bukkit.persistence.PersistentDataType.STRING,
+            worldName
+        )
+
+        mapItem.itemMeta = mapMeta
+        return mapItem
+    }
+
+    /**
+     * 🔧 v1.3.51: 检查物品是否为疆域地图
+     * @param item 物品
+     * @return 是否为疆域地图
+     */
+    fun isTerritoryMap(item: org.bukkit.inventory.ItemStack?): Boolean {
+        if (item == null || item.type != org.bukkit.Material.FILLED_MAP) {
+            return false
+        }
+
+        val meta = item.itemMeta ?: return false
+        val pdc = meta.persistentDataContainer
+
+        return pdc.has(
+            org.bukkit.NamespacedKey(cn.lcofficial.guozhan.Guozhan.instance, "territory_map"),
+            org.bukkit.persistence.PersistentDataType.STRING
+        )
+    }
+
+    /**
+     * 🔧 v1.3.51: 从疆域地图物品中获取地图信息
+     * @param item 疆域地图物品
+     * @return 地图信息（centerX, centerZ, worldName），如果不是疆域地图则返回null
+     */
+    fun getTerritoryMapInfo(item: org.bukkit.inventory.ItemStack): Triple<Int, Int, String>? {
+        if (!isTerritoryMap(item)) {
+            return null
+        }
+
+        val meta = item.itemMeta ?: return null
+        val pdc = meta.persistentDataContainer
+
+        val centerX = pdc.get(
+            org.bukkit.NamespacedKey(cn.lcofficial.guozhan.Guozhan.instance, "center_x"),
+            org.bukkit.persistence.PersistentDataType.INTEGER
+        ) ?: return null
+
+        val centerZ = pdc.get(
+            org.bukkit.NamespacedKey(cn.lcofficial.guozhan.Guozhan.instance, "center_z"),
+            org.bukkit.persistence.PersistentDataType.INTEGER
+        ) ?: return null
+
+        val worldName = pdc.get(
+            org.bukkit.NamespacedKey(cn.lcofficial.guozhan.Guozhan.instance, "world_name"),
+            org.bukkit.persistence.PersistentDataType.STRING
+        ) ?: return null
+
+        return Triple(centerX, centerZ, worldName)
+    }
+
+    /**
+     * 🔧 v1.3.51: 为现有的疆域地图重新注册渲染器
+     * @param mapView 地图视图
+     * @param centerX 中心X坐标
+     * @param centerZ 中心Z坐标
+     * @param worldName 世界名称
+     */
+    fun reregisterTerritoryMapRenderer(mapView: org.bukkit.map.MapView, centerX: Int, centerZ: Int, worldName: String) {
+        try {
+            // 清除所有现有渲染器
+            val existingRenderers = mapView.renderers.toList()
+            existingRenderers.forEach { mapView.removeRenderer(it) }
+
+            // 添加新的疆域地图渲染器
+            val renderer = TerritoryMapRenderer(centerX, centerZ, worldName)
+            mapView.addRenderer(renderer)
+
+            // 设置地图属性
+            mapView.isTrackingPosition = false
+            mapView.isUnlimitedTracking = false
+
+            pluginLogger.info("🔧 [地图修复] 为地图ID ${mapView.id} 重新注册疆域渲染器，中心: ($centerX, $centerZ), 世界: $worldName")
+        } catch (e: Exception) {
+            pluginLogger.severe("重新注册疆域地图渲染器失败: ${e.message}")
+            e.printStackTrace()
+        }
+    }
+
+    /**
+     * 🔧 v1.3.51: 检查并修复玩家背包中的疆域地图
+     * @param player 玩家
+     */
+    fun restorePlayerTerritoryMaps(player: org.bukkit.entity.Player) {
+        try {
+            var restoredCount = 0
+
+            // 检查玩家背包中的所有物品
+            for (item in player.inventory.contents) {
+                if (isTerritoryMap(item)) {
+                    val mapInfo = getTerritoryMapInfo(item!!)
+                    if (mapInfo != null) {
+                        val (centerX, centerZ, worldName) = mapInfo
+                        val mapMeta = item.itemMeta as? org.bukkit.inventory.meta.MapMeta
+                        val mapView = mapMeta?.mapView
+
+                        if (mapView != null) {
+                            // 重新注册渲染器
+                            reregisterTerritoryMapRenderer(mapView, centerX, centerZ, worldName)
+                            restoredCount++
+                        }
+                    }
+                }
+            }
+
+            if (restoredCount > 0) {
+                player.sendMessage("§a[疆域地图] 已修复 $restoredCount 张疆域地图的显示")
+                pluginLogger.info("🔧 [地图修复] 为玩家 ${player.name} 修复了 $restoredCount 张疆域地图")
+            }
+        } catch (e: Exception) {
+            pluginLogger.severe("修复玩家疆域地图失败: ${e.message}")
+            e.printStackTrace()
+        }
+    }
     
     /**
      * 创建疆域地图

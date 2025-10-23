@@ -1,0 +1,161 @@
+# GuoZhan 国战插件配置文件 - 测试环境版本
+# 此配置文件专为测试环境设计，包含便于测试的数值和自动资源发放功能
+# 生产环境请使用 config-production.yml
+
+# 数据库配置
+database:
+  type: SQLITE  # 数据库类型：SQLITE（本地文件）或 MYSQL（远程数据库）
+  host: 127.0.0.1  # MySQL数据库主机地址（SQLITE时忽略）
+  port: 3306  # MySQL数据库端口（SQLITE时忽略）
+  username: minecraft  # MySQL数据库用户名（SQLITE时忽略）
+  password: minecraft  # MySQL数据库密码（SQLITE时忽略）
+  database: minecraft  # MySQL数据库名称（SQLITE时忽略）
+
+# 测试环境设置 - 仅在测试服务器中启用
+test-environment:
+  enabled: true  # 是否启用测试环境功能（生产环境必须设为false）
+  auto-give-player-resources: true  # 玩家加入时自动发放资源
+  auto-give-country-resources: true  # 创建国家时自动发放资源
+  
+  # 玩家资源配置 - 玩家加入时自动获得的物品
+  player-resources:
+    gold: 100  # 金币数量
+    diamond: 50  # 钻石数量
+    iron-ingot: 128  # 铁锭数量
+    emerald: 32  # 绿宝石数量
+    dirt: 64  # 泥土数量（用于建筑测试）
+  
+  # 国家资源配置 - 创建国家时自动获得的资源
+  country-resources:
+    gold: 5000  # 国家金币
+    diamond: 500  # 国家钻石
+    economy-points: 1000  # 经济点数
+
+# 世界设置
+world:
+  spawnRadius: 100  # 出生点保护半径（区块）
+
+# 国家设置
+country:
+  max-name-length: 12  # 国家名称最大长度
+  min-name-length: 3  # 国家名称最小长度
+  core-health-max: 1000  # 国家核心最大血量
+  core-health-initial: 100  # 国家核心初始血量（测试环境：较低便于测试）
+  core-regen-interval: 30  # 核心血量回复间隔（秒）（测试环境：较快）
+  core-regen-amount: 2  # 每次回复的血量（测试环境：较多）
+  creation:
+    min-distance-between-countries: 2  # 国家间最小距离（区块）（测试环境：较近）
+    item_cost:
+      material: IRON_INGOT  # 创建国家所需物品
+      amount: 32  # 所需数量（测试环境：较少）
+  core-protection:
+    offline-protection: false  # 离线保护（测试环境：关闭便于测试）
+    min-online-members: 0  # 最少在线成员数（测试环境：无要求）
+    require-war-declaration: false  # 是否需要宣战（测试环境：关闭）
+    offline-attack-damage-reduction: 0.0  # 离线攻击伤害减免
+    allow-siege-building: true  # 允许攻城建筑
+
+# 血量显示条设置
+bossbar:
+  enabled: true  # 是否启用血量显示条
+  display-range: 100  # 显示范围（方块）
+  update-interval: 20  # 更新间隔（tick）
+  title-format: '{country} 核心血量'  # 显示格式
+  show-to-attacker-country: true  # 向攻击方显示
+  show-to-defender-country: true  # 向防守方显示
+  cache-duration: 30  # 缓存持续时间（秒）
+
+# 随机出生系统
+random-spawn:
+  enabled: true  # 是否启用随机出生
+  spawn-radius: 1000  # 出生半径（方块）（测试环境：较小）
+  max-attempts: 20  # 最大尝试次数
+  safety-check-radius: 2  # 安全检查半径
+  min-distance-from-spawn: 100  # 距离出生点最小距离
+  allowed-worlds:  # 允许的世界
+  - world
+  unsafe-blocks:  # 不安全的方块类型
+  - LAVA
+  - WATER
+  - FIRE
+  min-y-level: 60  # 最小Y坐标
+  max-y-level: 120  # 最大Y坐标
+
+# 科技系统
+technology:
+  research_duration: 0  # 研究持续时间（秒）（测试环境：瞬间完成）
+  enable_progress_notifications: true  # 启用进度通知
+  progress_notification_interval: 3600  # 进度通知间隔（秒）
+
+# 护盾系统
+shield:
+  cost-per-hour: 2  # 每小时费用（钻石）（测试环境：较低）
+  cooldown-minutes: 5  # 冷却时间（分钟）（测试环境：较短）
+  max-duration-hours: 24  # 最大持续时间（小时）
+  min-duration-hours: 1  # 最小持续时间（小时）
+  max-aspect-ratio: 2.0  # 最大长宽比
+  diamond-to-gold-rate: 10  # 钻石兑换金币比率
+  max-members: 50  # 最大成员数
+
+# 职业系统
+profession:
+  unlock-delay-hours: 0  # 解锁延迟（小时）（测试环境：无延迟）
+  upgrade-delay-hours: 1  # 升级延迟（小时）（测试环境：较短）
+  upgrade-cost: 10  # 升级费用（钻石）（测试环境：较低）
+
+# 税收系统
+tax:
+  base-rate: 0.1  # 基础税率
+  max-rate: 0.5  # 最大税率
+  collection-interval: 3600  # 收税间隔（秒）
+  regions:  # 税收区域配置（距离出生点的距离决定税收效率）
+    核心疆域:  # 最内层区域，税收效率最高
+      range: 1300  # 距离出生点的最大距离（方块）
+      gold-rate: 0.024  # 金币税收倍率
+      diamond-rate: 0.024  # 钻石税收倍率
+    内陆邦畿:  # 第二层区域
+      range: 2500
+      gold-rate: 0.02
+      diamond-rate: 0.016
+    开拓边疆:  # 第三层区域
+      range: 5000
+      gold-rate: 0.016
+      diamond-rate: 0.012
+    纷争之地:  # 第四层区域
+      range: 9000
+      gold-rate: 0.012
+      diamond-rate: 0.008
+    远征前线:  # 第五层区域
+      range: 14000
+      gold-rate: 0.008
+      diamond-rate: 0.004
+    失落蛮荒:  # 最外层区域，税收效率最低
+      range: 20000
+      gold-rate: 0.004
+      diamond-rate: 0.002
+
+# 战争系统
+war:
+  day: 6  # 战争日（0=周日，6=周六）
+  prepare-hour: 19  # 准备阶段开始时间（小时）
+  prepare-minute: 0  # 准备阶段开始时间（分钟）
+  start-hour: 19  # 战争开始时间（小时）
+  start-minute: 20  # 战争开始时间（分钟）
+  end-hour: 22  # 战争结束时间（小时）
+  end-minute: 0  # 战争结束时间（分钟）
+  core-territory-range:  # 核心领土攻击范围
+  - -64  # Y坐标下限
+  - 63   # Y坐标上限
+  war-territory-range:  # 战争领土范围
+  - -128  # Y坐标下限
+  - 127   # Y坐标上限
+  damage-multiplier: 1.5  # 战争期间伤害倍数
+  kill-reward: 10  # 击杀奖励（金币）
+
+# 领土系统
+territory:
+  claim-cost: 3  # 占领费用（金币）（测试环境：较低）
+  max-claims: 100  # 最大占领数量
+  loyalty-decay-rate: 0.1  # 忠诚度衰减率
+  loyalty-decay-interval: 60  # 忠诚度衰减间隔（秒）（测试环境：较快）
+  adjacency-required: true  # 是否需要相邻才能占领

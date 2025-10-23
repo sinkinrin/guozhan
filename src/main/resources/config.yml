@@ -37,6 +37,7 @@ country:
     min-online-members: 1 # 攻击核心需要的最少在线成员数
     require-war-declaration: true # 是否需要宣战才能攻击核心
     offline-attack-damage-reduction: 0.5 # 攻击离线国家的伤害减少（0.5 = 50%伤害）
+    allow-siege-building: true # 战争期间是否允许在敌方核心领地内放置/破坏方块
 
 # 领土设置
 territory:

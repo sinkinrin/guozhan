@@ -33,6 +33,7 @@ object Config : Configuration("config.yml") {
             var minOnlineMembers by int("country.core-protection.min-online-members", 1)
             var requireWarDeclaration by bool("country.core-protection.require-war-declaration", true)
             var offlineAttackDamageReduction by double("country.core-protection.offline-attack-damage-reduction", 0.5)
+            var allowSiegeBuilding by bool("country.core-protection.allow-siege-building", true)
         }
 
         object Creation : StaticLazy {
@@ -97,20 +98,136 @@ object Config : Configuration("config.yml") {
         var upgradeCost by int("profession.upgrade-cost", 50)
     }
 
+    internal object TestEnvironment : StaticLazy {
+        var enabled by bool("test-environment.enabled", false)
+        var autoGivePlayerResources by bool("test-environment.auto-give-player-resources", true)
+        var autoGiveCountryResources by bool("test-environment.auto-give-country-resources", true)
+
+        object PlayerResources : StaticLazy {
+            // 🔧 v1.3.32: 修复测试环境资源配置过量问题 - 调整为合理数量
+            var gold by int("test-environment.player-resources.gold", 100)
+            var diamond by int("test-environment.player-resources.diamond", 50)
+            var ironIngot by int("test-environment.player-resources.iron-ingot", 128)
+            var emerald by int("test-environment.player-resources.emerald", 32)
+            var dirt by int("test-environment.player-resources.dirt", 64) // 🔧 v1.3.34: 添加泥土方块
+        }
+
+        object CountryResources : StaticLazy {
+            // 🔧 v1.3.32: 修复测试环境资源配置过量问题 - 调整为合理数量
+            var gold by int("test-environment.country-resources.gold", 5000)
+            var diamond by int("test-environment.country-resources.diamond", 500)
+            var economyPoints by int("test-environment.country-resources.economy-points", 1000)
+        }
+    }
+
     internal object Tax : StaticLazy {
+        // 🔧 v1.3.31: 修复税收区域调整被绕过的问题
+        // 从配置文件读取税收区域设置，而不是使用硬编码值
         var baseRate by double("tax.base-rate", 0.1)
         var maxRate by double("tax.max-rate", 0.5)
         var collectionInterval by int("tax.collection-interval", 3600)
-        var regions by stringList("tax.regions", listOf("spawn", "inner", "middle", "outer", "border", "wilderness"))
+
+        /**
+         * 税收区域数据类
+         */
+        data class TaxRegionConfig(
+            val name: String,
+            val range: Int,
+            val goldRate: Double,
+            val diamondRate: Double
+        )
+
+        /**
+         * 从配置文件加载税收区域设置
+         */
+        fun loadTaxRegions(): List<TaxRegionConfig> {
+            val regions = mutableListOf<TaxRegionConfig>()
+
+            try {
+                val config = Guozhan.instance.config
+                val taxSection = config.getConfigurationSection("tax.regions")
+
+                if (taxSection != null) {
+                    for (regionName in taxSection.getKeys(false)) {
+                        val regionSection = taxSection.getConfigurationSection(regionName)
+                        if (regionSection != null) {
+                            val range = regionSection.getInt("range", 20000)
+                            val goldRate = regionSection.getDouble("gold-rate", 0.004)
+                            val diamondRate = regionSection.getDouble("diamond-rate", 0.002)
+
+                            regions.add(TaxRegionConfig(regionName, range, goldRate, diamondRate))
+                        }
+                    }
+                }
+
+                // 按范围从小到大排序
+                regions.sortBy { it.range }
+
+                if (regions.isEmpty()) {
+                    // 如果配置为空，使用默认值
+                    Guozhan.instance.logger.warning("税收区域配置为空，使用默认值")
+                    return getDefaultTaxRegions()
+                }
+
+                Guozhan.instance.logger.info("已加载 ${regions.size} 个税收区域配置")
+                return regions
+
+            } catch (e: Exception) {
+                Guozhan.instance.logger.warning("加载税收区域配置失败: ${e.message}，使用默认值")
+                return getDefaultTaxRegions()
+            }
+        }
+
+        /**
+         * 获取默认的税收区域配置
+         */
+        private fun getDefaultTaxRegions(): List<TaxRegionConfig> {
+            return listOf(
+                TaxRegionConfig("核心疆域", 1300, 0.024, 0.024),
+                TaxRegionConfig("内陆邦畿", 2500, 0.020, 0.016),
+                TaxRegionConfig("开拓边疆", 5000, 0.016, 0.012),
+                TaxRegionConfig("纷争之地", 9000, 0.012, 0.008),
+                TaxRegionConfig("远征前线", 14000, 0.008, 0.004),
+                TaxRegionConfig("失落蛮荒", 20000, 0.004, 0.002)
+            )
+        }
     }
 
     internal object War : StaticLazy {
-        var startTime by string("war.start-time", "19:20")
-        var endTime by string("war.end-time", "22:00")
-        var dayOfWeek by int("war.day-of-week", 6) // 6 = Saturday
-        var preparationMinutes by int("war.preparation-minutes", 20)
+        // 🔧 v1.3.31: 修复战争调度配置被忽略的问题
+        // 从配置文件读取战争时间设置，而不是使用硬编码值
+        var day by int("war.day", 6) // 周六 (1-7)
+        var prepareHour by int("war.prepare-hour", 19)
+        var prepareMinute by int("war.prepare-minute", 0)
+        var startHour by int("war.start-hour", 19)
+        var startMinute by int("war.start-minute", 20)
+        var endHour by int("war.end-hour", 22)
+        var endMinute by int("war.end-minute", 0)
+        var coreTerritoryRange by intList("war.core-territory-range", listOf(-64, 63))
+        var warTerritoryRange by intList("war.war-territory-range", listOf(-128, 127))
+
+        // 额外的战争配置
         var damageMultiplier by double("war.damage-multiplier", 1.5)
         var killReward by int("war.kill-reward", 10)
+
+        /**
+         * 验证战争时间配置的合理性
+         */
+        fun validateTimeSettings(): Boolean {
+            if (day !in 1..7) {
+                Guozhan.instance.logger.warning("战争日期配置无效: $day，应在 1-7 之间")
+                return false
+            }
+            if (prepareHour !in 0..23 || startHour !in 0..23 || endHour !in 0..23) {
+                Guozhan.instance.logger.warning("战争小时配置无效，应在 0-23 之间")
+                return false
+            }
+            if (prepareMinute !in 0..59 || startMinute !in 0..59 || endMinute !in 0..59) {
+                Guozhan.instance.logger.warning("战争分钟配置无效，应在 0-59 之间")
+                return false
+            }
+            return true
+        }
     }
 
     internal object Territory : StaticLazy {
@@ -122,6 +239,9 @@ object Config : Configuration("config.yml") {
     }
 
     override fun init(plugin: Guozhan) {
+        // 🔧 v1.3.33: 先加载配置文件，再初始化配置对象
+        super.init(plugin)
+
         Database.init()
         World.init()
         Country.init()
@@ -136,6 +256,23 @@ object Config : Configuration("config.yml") {
         Tax.init()
         War.init()
         Territory.init()
-        super.init(plugin)
+        TestEnvironment.init()
+        TestEnvironment.PlayerResources.init()
+        TestEnvironment.CountryResources.init()
+
+        // 🔧 v1.3.33: 添加测试环境配置加载日志
+        plugin.logger.info("[测试环境] 调试: 开始检查配置值")
+        plugin.logger.info("[测试环境] 调试: TestEnvironment.enabled = ${TestEnvironment.enabled}")
+        plugin.logger.info("[测试环境] 调试: 配置文件路径 = ${plugin.dataFolder}/config.yml")
+
+        if (TestEnvironment.enabled) {
+            plugin.logger.info("[测试环境] 测试环境已启用")
+            plugin.logger.info("[测试环境] 玩家资源自动发放: ${TestEnvironment.autoGivePlayerResources}")
+            plugin.logger.info("[测试环境] 国家资源自动发放: ${TestEnvironment.autoGiveCountryResources}")
+            plugin.logger.info("[测试环境] 玩家资源配置: 金币=${TestEnvironment.PlayerResources.gold}, 钻石=${TestEnvironment.PlayerResources.diamond}, 铁锭=${TestEnvironment.PlayerResources.ironIngot}, 绿宝石=${TestEnvironment.PlayerResources.emerald}, 泥土=${TestEnvironment.PlayerResources.dirt}")
+            plugin.logger.info("[测试环境] 国家资源配置: 金币=${TestEnvironment.CountryResources.gold}, 钻石=${TestEnvironment.CountryResources.diamond}, 经济点数=${TestEnvironment.CountryResources.economyPoints}")
+        } else {
+            plugin.logger.info("[测试环境] 测试环境已禁用")
+        }
     }
 }

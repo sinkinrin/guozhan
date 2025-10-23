@@ -95,13 +95,16 @@ object WarEffects {
      * 在敌对领土上应用特殊效果
      */
     private fun applyEnemyTerrainEffects(player: Player) {
-        // 在敌对领土上获得速度效果，但也会获得虚弱效果
+        // 🔧 v1.3.49: 修复攻击玩家后获得buff且无法继续攻击 - 移除虚弱效果，只保留速度效果
+        // 在敌对领土上获得速度效果，帮助快速移动和撤退
         player.addPotionEffect(PotionEffect(PotionEffectType.SPEED, WAR_BUFF_DURATION * 20, 0, false, true, true))
-        player.addPotionEffect(PotionEffect(PotionEffectType.WEAKNESS, WAR_BUFF_DURATION * 20, 0, false, true, true))
-        
+
+        // 🔧 v1.3.49: 移除虚弱效果，避免影响玩家攻击能力
+        // player.addPotionEffect(PotionEffect(PotionEffectType.WEAKNESS, WAR_BUFF_DURATION * 20, 0, false, true, true))
+
         // 通知玩家（仅在首次获得效果时）
-        if (!player.hasPotionEffect(PotionEffectType.WEAKNESS)) {
-            player.sendMessage("§c你正在敌对领土上，获得了速度但也受到了虚弱效果！")
+        if (!player.hasPotionEffect(PotionEffectType.SPEED)) {
+            player.sendMessage("§a你正在敌对领土上，获得了速度效果！")
         }
     }
     

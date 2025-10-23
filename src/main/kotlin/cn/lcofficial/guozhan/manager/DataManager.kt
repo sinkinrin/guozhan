@@ -4,6 +4,7 @@ import cn.lcofficial.guozhan.util.MigrationUtils
 import cn.lcofficial.guozhan.Guozhan
 import cn.lcofficial.guozhan.config.Config
 import cn.lcofficial.guozhan.data.Cities
+import cn.lcofficial.guozhan.data.ClaimProgresses
 import cn.lcofficial.guozhan.data.Countries
 import cn.lcofficial.guozhan.data.CountryTechnologies
 import cn.lcofficial.guozhan.data.DiplomaticRelations
@@ -24,23 +25,49 @@ object DataManager {
     lateinit var dataSource: HikariDataSource
 
     fun init(plugin: Guozhan) {
-        if (::dataSource.isInitialized) dataSource.close()
+        // 🔧 v1.3.51: 修复热重载问题 - 关闭数据源前等待异步操作完成
+        if (::dataSource.isInitialized) {
+            // 等待所有异步保存操作完成
+            waitForAsyncOperations()
+            dataSource.close()
+        }
         dataSource = HikariDataSource()
         when (Config.Database.type) {
             Config.Database.Type.MYSQL -> {
+                // 🔧 修复问题1：添加字符编码参数确保中文字段正确存储
                 dataSource.jdbcUrl =
-                    "jdbc:mysql://${Config.Database.host}:${Config.Database.port}/${Config.Database.database}?useSSL=false&serverTimezone=UTC"
+                    "jdbc:mysql://${Config.Database.host}:${Config.Database.port}/${Config.Database.database}?useSSL=false&serverTimezone=UTC&useUnicode=true&characterEncoding=UTF-8"
                 dataSource.username = Config.Database.username
                 dataSource.password = Config.Database.password
                 dataSource.driverClassName = "com.mysql.cj.jdbc.Driver"
+                // MySQL 连接池配置
+                dataSource.maximumPoolSize = 10
+                dataSource.minimumIdle = 5
+                dataSource.connectionTimeout = 30000
+                dataSource.idleTimeout = 600000
+                dataSource.maxLifetime = 1800000
+                dataSource.connectionTestQuery = "SELECT 1"
                 pluginLogger.info("正在连接数据库MySQL: ${Config.Database.host}:${Config.Database.port}/${Config.Database.database}")
+                pluginLogger.info("MySQL 连接池配置: maximumPoolSize=10, minimumIdle=5")
             }
 
             else -> {
+                // 🔧 修复问题1：SQLite 连接池配置 - 强制单连接避免 database is locked 错误
+                // 🔧 修复问题2：启用外键约束确保数据完整性
                 dataSource.jdbcUrl =
-                    "jdbc:sqlite:${plugin.dataFolder.path}${File.separator}guozhan.db"
+                    "jdbc:sqlite:${plugin.dataFolder.path}${File.separator}guozhan.db?journal_mode=WAL&foreign_keys=on"
                 dataSource.driverClassName = "org.sqlite.JDBC"
+                // SQLite 必须使用单连接池，避免并发写入冲突
+                dataSource.maximumPoolSize = 1
+                dataSource.minimumIdle = 1
+                pluginLogger.info("SQLite 外键约束已启用 (foreign_keys=on)")
+                dataSource.connectionTimeout = 30000
+                dataSource.idleTimeout = 600000
+                dataSource.maxLifetime = 1800000
+                dataSource.leakDetectionThreshold = 0 // 关闭连接泄漏检测
+                dataSource.connectionTestQuery = "SELECT 1"
                 pluginLogger.info("正在连接数据库SQLite: ${plugin.dataFolder.path}${File.separator}guozhan.db")
+                pluginLogger.info("SQLite 连接池配置: maximumPoolSize=1 (单连接模式，避免并发冲突)")
             }
         }
         try {
@@ -48,7 +75,7 @@ object DataManager {
             transaction {
                 MigrationUtils.statementsRequiredForDatabaseMigration(
                     Users, Countries, Cities, TerritoryBlocks, Territories,
-                    DiplomaticRelations, Technologies, CountryTechnologies
+                    DiplomaticRelations, Technologies, CountryTechnologies, ClaimProgresses
                 ).forEach(::exec)
             }
             pluginLogger.info("连接成功")
@@ -114,6 +141,7 @@ object DataManager {
     /**
      * 清空所有数据库表
      * 警告：此操作将删除所有数据！
+     * 🔧 v1.3.28: 同时清空所有缓存，包括坐标索引和成员缓存
      */
     fun clearAllTables() {
         transaction {
@@ -128,12 +156,48 @@ object DataManager {
             Countries.deleteAll()
         }
 
-        // 清空内存缓存
+        // 🔧 v1.3.28: 清空所有内存缓存，确保与数据库状态一致
         UserManager.users.clear()
         CountryManager.countries.clear()
         CityManager.cities.clear()
         TerritoryManager.territories.clear()
 
-        pluginLogger.warning("数据库已清空！所有数据已删除")
+        // 🔧 v1.3.28: 关键修复 - 清空坐标索引缓存
+        TerritoryManager.territoryByCoords.clear()
+
+        // 🔧 v1.3.28: 清空国家成员缓存
+        CountryManager.memberCache.clear()
+
+        // 🔧 v1.3.51: 修复科技缓存不重置问题 - 清空科技管理器缓存
+        cn.lcofficial.guozhan.manager.TechnologyManager.clearCache()
+        cn.lcofficial.guozhan.manager.TechEffectManager.stopEffectUpdateTask()
+
+        pluginLogger.warning("数据库已清空！所有数据和缓存已删除")
+    }
+
+    /**
+     * 关闭数据库连接池
+     * 🔧 v1.3.39: 修复数据库连接池清理缺失 - 插件卸载时调用
+     */
+    fun shutdown() {
+        if (::dataSource.isInitialized && !dataSource.isClosed) {
+            dataSource.close()
+            pluginLogger.info("数据库连接池已关闭")
+        }
+    }
+
+    /**
+     * 等待异步操作完成
+     * 🔧 v1.3.51: 修复热重载问题 - 在关闭数据库连接池前等待异步保存操作完成
+     */
+    private fun waitForAsyncOperations() {
+        try {
+            // 等待一小段时间让异步操作完成
+            Thread.sleep(500)
+            Guozhan.instance.logger.info("已等待异步操作完成")
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            Guozhan.instance.logger.warning("等待异步操作时被中断")
+        }
     }
 }

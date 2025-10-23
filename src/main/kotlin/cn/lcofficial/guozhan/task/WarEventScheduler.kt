@@ -1,6 +1,7 @@
 package cn.lcofficial.guozhan.task
 
 import cn.lcofficial.guozhan.Guozhan
+import cn.lcofficial.guozhan.config.Config
 import cn.lcofficial.guozhan.manager.CountryManager
 import cn.lcofficial.guozhan.manager.TerritoryManager
 import org.bukkit.Bukkit
@@ -17,16 +18,9 @@ class WarEventScheduler {
     private var isWarActive = false
     private var warStartTime: LocalDateTime? = null
     private val warScores = mutableMapOf<UUID, Int>()
-    
-    companion object {
-        const val WAR_DAY = 6 // 周六
-        const val PREPARE_HOUR = 19
-        const val PREPARE_MINUTE = 0
-        const val WAR_START_HOUR = 19
-        const val WAR_START_MINUTE = 20
-        const val WAR_END_HOUR = 22
-        const val WAR_END_MINUTE = 0
-    }
+
+    // 🔧 v1.3.31: 移除硬编码常量，改为从配置文件读取
+    // 战争时间配置现在从 Config.War 对象读取
     
     fun run() {
         val now = LocalDateTime.now()
@@ -37,26 +31,27 @@ class WarEventScheduler {
             endWar()
         }
 
-        if (isWarActive && now.toLocalTime().isAfter(LocalTime.of(WAR_START_HOUR, WAR_START_MINUTE))) {
+        // 🔧 v1.3.31: 使用配置文件中的战争时间设置
+        if (isWarActive && now.toLocalTime().isAfter(LocalTime.of(Config.War.startHour, Config.War.startMinute))) {
             updateWarScores()
         }
     }
-    
+
     private fun shouldStartWar(now: LocalDateTime): Boolean {
         val currentTime = now.toLocalTime()
-        val startTime = LocalTime.of(PREPARE_HOUR, PREPARE_MINUTE)
+        val startTime = LocalTime.of(Config.War.prepareHour, Config.War.prepareMinute)
         val endTime = startTime.plusMinutes(1) // 1分钟的时间窗口
 
-        return now.dayOfWeek == DayOfWeek.of(WAR_DAY) &&
+        return now.dayOfWeek == DayOfWeek.of(Config.War.day) &&
                !currentTime.isBefore(startTime) && currentTime.isBefore(endTime)
     }
 
     private fun shouldEndWar(now: LocalDateTime): Boolean {
         val currentTime = now.toLocalTime()
-        val endTime = LocalTime.of(WAR_END_HOUR, WAR_END_MINUTE)
+        val endTime = LocalTime.of(Config.War.endHour, Config.War.endMinute)
         val windowEnd = endTime.plusMinutes(1) // 1分钟的时间窗口
 
-        return now.dayOfWeek == DayOfWeek.of(WAR_DAY) &&
+        return now.dayOfWeek == DayOfWeek.of(Config.War.day) &&
                !currentTime.isBefore(endTime) && currentTime.isBefore(windowEnd)
     }
     
@@ -108,7 +103,7 @@ class WarEventScheduler {
         return warScores.toMap()
     }
     
-    private fun distributeRewards(winners: Map<UUID, Int>) {
+    fun distributeRewards(winners: Map<UUID, Int>) {
         val totalScore = winners.values.sum()
         if (totalScore == 0) return
 
@@ -164,12 +159,17 @@ class WarEventScheduler {
     
     fun isPreparationTime(): Boolean {
         val now = LocalDateTime.now()
-        return now.dayOfWeek == DayOfWeek.of(WAR_DAY) && 
-               now.toLocalTime().isAfter(LocalTime.of(PREPARE_HOUR, PREPARE_MINUTE)) &&
-               now.toLocalTime().isBefore(LocalTime.of(WAR_START_HOUR, WAR_START_MINUTE))
+        // 🔧 v1.3.31: 使用配置文件中的战争时间设置
+        return now.dayOfWeek == DayOfWeek.of(Config.War.day) &&
+               now.toLocalTime().isAfter(LocalTime.of(Config.War.prepareHour, Config.War.prepareMinute)) &&
+               now.toLocalTime().isBefore(LocalTime.of(Config.War.startHour, Config.War.startMinute))
     }
     
     fun isCoreWarZone(x: Int, z: Int): Boolean {
-        return isWarTime() && x in -128..127 && z in -128..127
+        // 🔧 v1.3.31: 使用配置文件中的战争领土范围
+        val range = Config.War.warTerritoryRange
+        val minX = if (range.size >= 2) range[0] else -128
+        val maxX = if (range.size >= 2) range[1] else 127
+        return isWarTime() && x in minX..maxX && z in minX..maxX
     }
 }

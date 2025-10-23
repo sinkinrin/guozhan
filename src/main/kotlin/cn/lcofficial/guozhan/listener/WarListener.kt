@@ -93,9 +93,13 @@ class WarListener : Listener {
             
             // 检查两个国家是否处于战争状态
             if (WarManager.isAtWar(damagedCountry, damagerCountry)) {
-                // 检查是否在领土上，应用额外战争效果
-                WarEffects.applyWarEffects(damager, damagerCountry)
-                WarEffects.applyWarEffects(damaged, damagedCountry)
+                // 🔧 v1.3.49: 修复攻击玩家后获得buff且无法继续攻击 - 移除每次攻击都应用战争效果的逻辑
+                // 战争效果应该由定时任务自动应用，而不是每次攻击时应用
+                // WarEffects.applyWarEffects(damager, damagerCountry)
+                // WarEffects.applyWarEffects(damaged, damagedCountry)
+
+                // 记录战争中的攻击事件
+                Guozhan.instance.logger.info("🔧 [战争攻击] ${damager.name}(${damagerCountry.name}) 攻击了 ${damaged.name}(${damagedCountry.name})")
             }
         }
     }

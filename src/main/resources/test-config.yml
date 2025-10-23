@@ -1,0 +1,116 @@
+# 测试环境配置文件
+# 🔧 v1.3.32: 修复测试环境资源配置过量问题
+# 此配置文件提供了适合测试的合理资源配置
+
+# 测试环境设置
+test-environment:
+  enabled: true
+  auto-give-player-resources: true
+  auto-give-country-resources: true
+  
+  # 玩家资源配置（合理数量，避免物品栏溢出）
+  player-resources:
+    gold: 100          # 金币（原10000 → 100）
+    diamond: 50        # 钻石（原1000 → 50）
+    iron-ingot: 128    # 铁锭（原1000 → 128，2组）
+    emerald: 32        # 绿宝石（原500 → 32，半组）
+  
+  # 国家资源配置（合理数量，便于测试）
+  country-resources:
+    gold: 5000         # 国库金币（原50000 → 5000）
+    diamond: 500       # 国库钻石（原5000 → 500）
+    economy-points: 1000  # 经济点数（原10000 → 1000）
+
+# 测试专用的国家设置
+country:
+  max-name-length: 12
+  min-name-length: 3
+  creation:
+    item_cost:
+      material: "IRON_INGOT"
+      amount: 32  # 测试环境：32个铁锭（原64 → 32）
+    min-distance-between-countries: 2  # 测试环境：2区块（便于测试）
+  core-health-max: 1000
+  core-health-initial: 100  # 测试环境：100血量（原50 → 100，便于测试攻击）
+  core-regen-interval: 30   # 测试环境：30秒回血（原60 → 30，加快测试）
+  core-regen-amount: 2      # 测试环境：每次回血2点（原1 → 2）
+
+# 测试专用的护盾设置
+shield:
+  cost-per-hour: 2          # 测试环境：降低护盾成本（原5 → 2）
+  cooldown-minutes: 5       # 测试环境：5分钟冷却（原30 → 5）
+  max-duration-hours: 24
+  min-duration-hours: 1
+  max-aspect-ratio: 2.0
+  diamond-to-gold-rate: 10
+  max-members: 50
+
+# 测试专用的科技设置
+technology:
+  research_duration: 0      # 测试环境：瞬间完成研究
+  enable_progress_notifications: false  # 测试环境：关闭进度通知
+  progress_notification_interval: 60
+
+# 测试专用的职业设置
+profession:
+  unlock-delay-hours: 0     # 测试环境：立即可设置职业（原2 → 0）
+  upgrade-delay-hours: 1    # 测试环境：1小时后可升级（原24 → 1）
+  upgrade-cost: 10          # 测试环境：降低升级成本（原50 → 10）
+
+# 测试专用的领土设置
+territory:
+  max-loyalty: 100
+  loyalty-decay-interval: 60  # 测试环境：1分钟衰减（原300 → 60，加快测试）
+  loyalty-restore-cost: 0.1   # 测试环境：降低恢复成本（原0.5 → 0.1）
+
+# 测试专用的核心保护设置
+core-protection:
+  offline-protection: false    # 测试环境：关闭离线保护（便于测试攻击）
+  min-online-members: 0        # 测试环境：不需要在线成员（原1 → 0）
+  require-war-declaration: false  # 测试环境：不需要宣战（便于测试）
+  offline-attack-damage-reduction: 0.0  # 测试环境：无伤害减少
+  allow-siege-building: true   # 测试环境：允许战争期间在核心领地搭建攻城设施
+
+# 测试专用的随机出生设置
+random-spawn:
+  enabled: true
+  spawn-radius: 1000        # 测试环境：较小的出生半径（原5000 → 1000）
+  max-attempts: 20          # 测试环境：减少尝试次数（原50 → 20）
+  safety-check-radius: 2    # 测试环境：较小的安全检查半径（原3 → 2）
+  min-distance-from-spawn: 100  # 测试环境：较小的最小距离（原1000 → 100）
+
+# 测试说明
+test-notes: |
+  此配置文件专为测试环境设计，具有以下特点：
+  
+  1. 资源配置合理：
+     - 玩家资源数量适中，不会导致物品栏溢出
+     - 国家资源足够测试各种功能
+  
+  2. 时间配置加速：
+     - 核心回血间隔缩短（30秒）
+     - 忠诚度衰减加快（1分钟）
+     - 护盾冷却时间缩短（5分钟）
+     - 职业解锁时间缩短（立即/1小时）
+  
+  3. 成本配置降低：
+     - 创建国家成本降低（32铁锭）
+     - 护盾成本降低（2倍收入）
+     - 忠诚度恢复成本降低（0.1倍）
+     - 职业升级成本降低（10钻石）
+  
+  4. 保护机制简化：
+     - 关闭离线保护
+     - 不需要宣战即可攻击
+     - 不需要在线成员要求
+  
+  5. 距离配置缩短：
+     - 国家间最小距离（2区块）
+     - 随机出生半径（1000格）
+  
+  使用方法：
+  1. 将此文件复制为 config.yml
+  2. 重启服务器
+  3. 开始测试
+  
+  注意：此配置仅适用于测试环境，不建议在正式服务器使用！

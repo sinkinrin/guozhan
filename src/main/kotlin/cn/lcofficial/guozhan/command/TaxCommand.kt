@@ -73,7 +73,7 @@ class TaxCommand : CommandExecutor, TabCompleter {
         player.sendInfo( "§6===== §f区块税收信息 §6=====")
         player.sendInfo( "§7区块坐标: §f${territory.x}, ${territory.z} (${territory.world})")
         player.sendInfo( "§7所属国家: §f${territory.owner?.name ?: "无"}")
-        player.sendInfo( "§7税收区域: §f${region.displayName}")
+        player.sendInfo( "§7税收区域: §f${region.name}")
         player.sendInfo( "§7金锭税率: §6${decimalFormat.format(goldRate)} §7/ 小时")
         player.sendInfo( "§7钻石税率: §b${decimalFormat.format(diamondRate)} §7/ 小时")
     }
@@ -113,12 +113,13 @@ class TaxCommand : CommandExecutor, TabCompleter {
         val diamondTaxPerHour = RegionalTaxSystem.calculateTotalDiamondTaxPerHour(country)
         
         val territories = TerritoryManager.getTerritoriesByCountry(country)
-        val regionCounts = mutableMapOf<RegionalTaxSystem.TaxRegion, Int>()
-        
+        // 🔧 v1.3.31: 使用新的税收区域配置类型
+        val regionCounts = mutableMapOf<String, Int>()
+
         // 统计各区域的区块数量
         for (territory in territories) {
             val region = RegionalTaxSystem.getTerritoryRegion(territory)
-            regionCounts[region] = (regionCounts[region] ?: 0) + 1
+            regionCounts[region.name] = (regionCounts[region.name] ?: 0) + 1
         }
         
         player.sendInfo( "§6===== §f国家税收信息 §6=====")
@@ -130,10 +131,10 @@ class TaxCommand : CommandExecutor, TabCompleter {
         player.sendInfo( "§7每日钻石收入: §b${decimalFormat.format(diamondTaxPerHour * 24)}")
         
         player.sendInfo( "§7区域分布:")
-        for (region in RegionalTaxSystem.TaxRegion.values()) {
-            val count = regionCounts[region] ?: 0
+        // 🔧 v1.3.31: 使用新的税收区域配置
+        for ((regionName, count) in regionCounts) {
             if (count > 0) {
-                player.sendInfo( "  §7${region.displayName}: §f${count} 区块")
+                player.sendInfo( "  §7${regionName}: §f${count} 区块")
             }
         }
     }

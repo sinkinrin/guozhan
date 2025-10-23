@@ -355,8 +355,21 @@ object RandomSpawnManager {
             val z = location.blockZ
             val y = location.blockY
 
+            // 🔧 v1.3.29: 关键修复 - 使用相对于出生点的坐标进行距离判定
             // 避免在过于偏远的位置生成
-            if (x * x + z * z > Config.RandomSpawn.spawnRadius * Config.RandomSpawn.spawnRadius) {
+            val spawnLocation = location.world.spawnLocation
+            val spawnX = spawnLocation.blockX
+            val spawnZ = spawnLocation.blockZ
+            val relativeX = x - spawnX
+            val relativeZ = z - spawnZ
+            val distanceSquared = relativeX * relativeX + relativeZ * relativeZ
+            val radiusSquared = Config.RandomSpawn.spawnRadius * Config.RandomSpawn.spawnRadius
+
+            if (distanceSquared > radiusSquared) {
+                pluginLogger.fine(
+                    "[随机出生] 位置 ($x, $z) 距离出生点 ($spawnX, $spawnZ) 过远: " +
+                    "距离=${Math.sqrt(distanceSquared.toDouble()).toInt()}, 最大半径=${Config.RandomSpawn.spawnRadius}"
+                )
                 return false
             }
 

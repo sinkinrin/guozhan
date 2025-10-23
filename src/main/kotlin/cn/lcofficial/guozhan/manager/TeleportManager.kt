@@ -69,12 +69,21 @@ object TeleportManager {
     /**
      * 处理玩家受到攻击事件
      * 如果玩家正在传送，则取消传送
+     * 🔧 v1.3.38修复：确保玩家消息发送在EntityScheduler中执行
      * @param player 受攻击的玩家
      */
     fun onPlayerDamaged(player: Player) {
         if (isPlayerTeleporting(player)) {
             cancelTeleport(player)
-            player.sendMessage("§c传送被取消！你在等待期间受到了攻击。")
+
+            // 🔧 v1.3.38修复：在EntityScheduler中安全发送消息
+            player.scheduler.run(Guozhan.instance, { _ ->
+                try {
+                    player.sendMessage("§c传送被取消！你在等待期间受到了攻击。")
+                } catch (e: Exception) {
+                    Guozhan.instance.logger.warning("向玩家 ${player.name} 发送传送取消消息时出错: ${e.message}")
+                }
+            }, null)
         }
     }
     

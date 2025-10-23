@@ -97,6 +97,13 @@ open class Configuration(val name: String) {
             override fun setValueToConfig(value: List<String>) = config.set(path, value)
         }
 
+    // 🔧 v1.3.31: 添加 intList 委托方法
+    fun intList(path: String, default: List<Int>) =
+        object : ConfigDelegate<List<Int>>(path, default) {
+            override fun getValueFromConfig() = config.getIntegerList(path).ifEmpty { default }
+            override fun setValueToConfig(value: List<Int>) = config.set(path, value)
+        }
+
     inline fun <reified T : Enum<T>> enum(path: String, default: T) =
         object : ConfigDelegate<T>(path, default) {
             override fun getValueFromConfig(): T {

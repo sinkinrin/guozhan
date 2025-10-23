@@ -59,6 +59,7 @@ class GMCommand : CommandExecutor, TabCompleter {
             "endwar" -> handleEndWar(sender, args)
             "warinfo" -> handleWarInfo(sender, args)
             "shield" -> handleShield(sender, args)
+            "testenv" -> handleTestEnvironment(sender, args)
             "help" -> showHelp(sender)
             else -> {
                 sender.sendError("未知的GM命令: ${args[0]}")
@@ -420,6 +421,7 @@ class GMCommand : CommandExecutor, TabCompleter {
     /**
      * 重载配置
      * /gzgm reload
+     * 🔧 v1.3.52: 修复热重载时数据库连接池竞态条件 - 禁止运行时热重载
      */
     private fun handleReload(sender: CommandSender, args: Array<out String>) {
         if (!sender.hasPermission("guozhan.admin.reload")) {
@@ -427,12 +429,42 @@ class GMCommand : CommandExecutor, TabCompleter {
             return
         }
 
+        // 🔧 v1.3.52: 检查是否有玩家在线
+        val onlinePlayers = org.bukkit.Bukkit.getOnlinePlayers()
+        if (onlinePlayers.isNotEmpty()) {
+            sender.sendError("§c无法热重载：当前有 ${onlinePlayers.size} 个玩家在线")
+            sender.sendInfo("§e热重载可能导致数据丢失，请在所有玩家离线后使用完全重启服务器的方式")
+            sender.sendInfo("§e或使用 §6/stop §e命令关闭服务器后重新启动")
+            return
+        }
+
+        // 🔧 v1.3.52: 检查是否有活跃的占领进度
+        val activeClaims = cn.lcofficial.guozhan.manager.ClaimManager.getAllActiveClaims()
+        if (activeClaims.isNotEmpty()) {
+            sender.sendError("§c无法热重载：当前有 ${activeClaims.size} 个活跃的占领进度")
+            sender.sendInfo("§e请等待所有占领完成后再重载，或使用完全重启服务器的方式")
+            return
+        }
+
+        // 🔧 v1.3.52: 检查是否有正在进行的科技研究
+        val researchingCount = cn.lcofficial.guozhan.manager.TechnologyManager.getResearchingCount()
+        if (researchingCount > 0) {
+            sender.sendError("§c无法热重载：当前有 ${researchingCount} 个正在进行的科技研究")
+            sender.sendInfo("§e请等待所有科技研究完成后再重载，或使用完全重启服务器的方式")
+            return
+        }
+
         try {
+            sender.sendWarning("§e⚠️ 警告：热重载可能导致数据不一致，建议使用完全重启服务器的方式")
+            sender.sendInfo("§e正在重载配置...")
+
             cn.lcofficial.guozhan.Guozhan.instance.initialize()
             sender.sendSuccess("配置重载完成")
             GMLogger.logGMAction(sender, "RELOAD_CONFIG", null, emptyMap())
         } catch (e: Exception) {
             sender.sendError("配置重载失败: ${e.message}")
+            cn.lcofficial.guozhan.Guozhan.instance.logger.severe("配置重载失败: ${e.message}")
+            e.printStackTrace()
         }
     }
 
@@ -701,6 +733,10 @@ class GMCommand : CommandExecutor, TabCompleter {
         sender.sendInfo("§e/gzgm endwar <国家1> <国家2> §7- 手动结束战争")
         sender.sendInfo("§e/gzgm warinfo §7- 查看当前战争状态")
         sender.sendInfo("§e/gzgm shield <国家> <小时> §7- 强制激活护盾(绕过时间限制)")
+        sender.sendInfo("§c=== 测试环境命令 ===")
+        sender.sendInfo("§e/gzgm testenv status §7- 查看测试环境状态")
+        sender.sendInfo("§e/gzgm testenv give <玩家> <资源> <数量> §7- 给予测试资源")
+        sender.sendInfo("§e/gzgm testenv country <国家> <资源> <数量> §7- 给予国家测试资源")
     }
 
     override fun onTabComplete(sender: CommandSender, command: Command, alias: String, args: Array<out String>): MutableList<String>? {
@@ -740,6 +776,9 @@ class GMCommand : CommandExecutor, TabCompleter {
         if (sender.hasPermission("guozhan.admin.shield")) {
             commands.add("shield")
         }
+        if (sender.hasPermission("guozhan.admin.testenv")) {
+            commands.add("testenv")
+        }
 
         commands.addAll(listOf("info", "help"))
 
@@ -753,6 +792,7 @@ class GMCommand : CommandExecutor, TabCompleter {
                 CountryManager.getAllCountries().map { it.name }
             "debug" -> listOf("on", "off")
             "cleardata" -> listOf("countries", "territories", "users", "all")
+            "testenv" -> listOf("status", "give", "country")
             "setrank" -> listOf("DEFAULT", "ADMIN", "OWNER")
             "cleardb" -> listOf("confirm")
             else -> emptyList()
@@ -956,25 +996,117 @@ class GMCommand : CommandExecutor, TabCompleter {
         }
 
         try {
-            // GM模式：绕过时间限制激活护盾
-            val success = ShieldManager.activateShield(country, hours, gmMode = true)
+            // 🔧 v1.3.47: 修复护盾激活线程阻塞问题 - 使用异步回调
+            ShieldManager.activateShield(country, hours, gmMode = true) { success ->
+                if (success) {
+                    sender.sendSuccess("§c[GM模式] §f已为国家 §e${country.name} §f强制激活护盾，持续 §e$hours §f小时")
 
-            if (success) {
-                sender.sendSuccess("§c[GM模式] §f已为国家 §e${country.name} §f强制激活护盾，持续 §e$hours §f小时")
-
-                // 记录GM操作
-                GMLogger.logGMAction(sender, "ACTIVATE_SHIELD", null, mapOf(
-                    "country" to country.name,
-                    "hours" to hours,
-                    "bypass_time_limit" to true
-                ))
-            } else {
-                sender.sendError("激活护盾失败，请检查国家状态和资源")
+                    // 记录GM操作
+                    GMLogger.logGMAction(sender, "ACTIVATE_SHIELD", null, mapOf(
+                        "country" to country.name,
+                        "hours" to hours,
+                        "bypass_time_limit" to true
+                    ))
+                } else {
+                    sender.sendError("激活护盾失败，请检查国家状态和资源")
+                }
             }
 
         } catch (e: Exception) {
             sender.sendError("激活护盾时发生错误: ${e.message}")
             e.printStackTrace()
+        }
+    }
+
+    /**
+     * 处理测试环境命令
+     * /gzgm testenv <status|give|country>
+     */
+    private fun handleTestEnvironment(sender: CommandSender, args: Array<out String>) {
+        if (!sender.hasPermission("guozhan.admin.testenv")) {
+            sender.sendError("你没有权限使用测试环境命令")
+            return
+        }
+
+        if (args.size < 2) {
+            sender.sendError("用法: /gzgm testenv <status|give|country>")
+            return
+        }
+
+        when (args[1].lowercase()) {
+            "status" -> {
+                cn.lcofficial.guozhan.manager.TestEnvironmentManager.showTestEnvironmentStatus(sender as? Player ?: run {
+                    sender.sendError("该命令只能由玩家执行")
+                    return
+                })
+            }
+            "give" -> {
+                if (args.size < 5) {
+                    sender.sendError("用法: /gzgm testenv give <玩家> <资源> <数量>")
+                    return
+                }
+
+                val targetPlayer = Bukkit.getPlayer(args[2])
+                if (targetPlayer == null) {
+                    sender.sendError("玩家 ${args[2]} 不在线")
+                    return
+                }
+
+                val resourceType = args[3]
+                val amount = args[4].toIntOrNull()
+                if (amount == null || amount <= 0) {
+                    sender.sendError("数量必须是正整数")
+                    return
+                }
+
+                if (cn.lcofficial.guozhan.manager.TestEnvironmentManager.giveTestResources(targetPlayer, resourceType, amount)) {
+                    sender.sendMessage("§a已为玩家 ${targetPlayer.name} 给予 ${amount} 个 ${resourceType}")
+
+                    // 记录GM操作
+                    GMLogger.logGMAction(sender, "GIVE_TEST_RESOURCE", targetPlayer.name, mapOf(
+                        "resource" to resourceType,
+                        "amount" to amount
+                    ))
+                }
+            }
+            "country" -> {
+                if (args.size < 5) {
+                    sender.sendError("用法: /gzgm testenv country <国家> <资源> <数量>")
+                    return
+                }
+
+                val countryName = args[2]
+                val country = CountryManager.getByName(countryName)
+                if (country == null) {
+                    sender.sendError("国家 $countryName 不存在")
+                    return
+                }
+
+                val resourceType = args[3]
+                val amount = args[4].toIntOrNull()
+                if (amount == null || amount <= 0) {
+                    sender.sendError("数量必须是正整数")
+                    return
+                }
+
+                if (cn.lcofficial.guozhan.manager.TestEnvironmentManager.giveCountryTestResources(
+                    country, resourceType, amount, sender as? Player ?: run {
+                        sender.sendError("该命令只能由玩家执行")
+                        return
+                    })) {
+
+                    // 记录GM操作
+                    GMLogger.logGMAction(sender, "GIVE_COUNTRY_TEST_RESOURCE", null, mapOf(
+                        "country" to country.name,
+                        "resource" to resourceType,
+                        "amount" to amount
+                    ))
+                }
+            }
+            else -> {
+                sender.sendError("未知的测试环境命令: ${args[1]}")
+                sender.sendError("可用命令: status, give, country")
+            }
         }
     }
 }

@@ -8,10 +8,12 @@ import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
 import java.util.*
+import java.util.concurrent.ConcurrentHashMap
 
 object CityManager {
 
-    val cities = mutableMapOf<UUID, City>()
+    // 🔧 修复问题2：使用 ConcurrentHashMap 确保 Folia 多线程环境下的线程安全
+    val cities = ConcurrentHashMap<UUID, City>()
 
     fun getCity(id: UUID): City? = transaction {
         var city = cities[id]

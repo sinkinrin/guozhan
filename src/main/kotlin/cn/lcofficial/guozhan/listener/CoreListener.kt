@@ -30,26 +30,45 @@ class CoreListener : Listener {
         val player = event.player
         val location = block.location
 
+        // 🔧 v1.3.35: 添加调试信息
+        player.sendMessage("§7[核心调试] CoreListener检查方块破坏: ${block.type} at (${location.blockX}, ${location.blockY}, ${location.blockZ})")
+
         // 检查是否在核心保护范围内
-        val coreCountry = CoreManager.findCoreCountry(location) ?: return
-        val coreLocation = coreCountry.getCoreLocation() ?: return
+        val coreCountry = CoreManager.findCoreCountry(location)
+        if (coreCountry == null) {
+            player.sendMessage("§7[核心调试] 未找到核心国家，允许破坏")
+            return
+        }
+
+        val coreLocation = coreCountry.getCoreLocation()
+        if (coreLocation == null) {
+            player.sendMessage("§7[核心调试] 核心位置为空，允许破坏")
+            return
+        }
+
+        val distance = location.distance(coreLocation)
+        player.sendMessage("§7[核心调试] 找到核心国家: ${coreCountry.name}, 距离: $distance")
 
         // 检查是否是核心方块（信标）
-        if (block.type == Material.BEACON && location.distance(coreLocation) < 1.0) {
+        if (block.type == Material.BEACON && distance < 1.0) {
             event.isCancelled = true
             player.sendMessage("§c核心方块无法被破坏！只能通过攻击来摧毁核心。")
+            player.sendMessage("§7[核心调试] 信标保护生效")
             return
         }
 
         // 检查是否是保护玻璃
-        if (block.type == Material.GLASS && location.distance(coreLocation) <= 2.0) {
+        if (block.type == Material.GLASS && distance <= 2.0) {
             event.isCancelled = true
             player.sendMessage("§c核心保护玻璃无法被破坏！请通过左键点击来攻击核心。")
+            player.sendMessage("§7[核心调试] 玻璃保护生效，距离: $distance")
 
             // 立即恢复被破坏的玻璃
             scheduleGlassRestore(location)
             return
         }
+
+        player.sendMessage("§7[核心调试] 不在保护范围内或不是保护方块，允许破坏")
     }
 
     /**

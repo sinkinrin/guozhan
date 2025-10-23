@@ -7,6 +7,7 @@ import org.jetbrains.exposed.dao.id.IdTable
 import org.jetbrains.exposed.dao.id.EntityID
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.jetbrains.exposed.sql.update
+import org.jetbrains.exposed.sql.insert
 import java.util.*
 
 object Users : IdTable<String>("gz_users") {
@@ -47,11 +48,29 @@ class User(
             return null
         }
         set(value) {
+            // 🔧 v1.3.21: 更新成员缓存
+            val oldCountryId = countryId
+
             if (value == null) {
+                // 离开国家 - 从旧国家的缓存中移除
+                if (oldCountryId != null) {
+                    CountryManager.removeMemberFromCache(oldCountryId, uniqueId)
+                }
                 countryId = null
                 return
             }
-            countryId = value.id
+
+            // 加入新国家
+            val newCountryId = value.id
+
+            // 如果之前属于其他国家，从旧国家缓存中移除
+            if (oldCountryId != null && oldCountryId != newCountryId) {
+                CountryManager.removeMemberFromCache(oldCountryId, uniqueId)
+            }
+
+            // 添加到新国家缓存
+            CountryManager.addMemberToCache(newCountryId, uniqueId)
+            countryId = newCountryId
         }
 
     /**
@@ -60,16 +79,72 @@ class User(
     val player: Player?
         get() = Bukkit.getPlayer(uniqueId)
 
-    fun save() = transaction {
-        Users.update({ Users.id eq uniqueId.toString() }) {
+    /**
+     * 保存用户数据到数据库
+     * 🔧 v1.3.25: 默认异步执行，避免阻塞 region 线程
+     * 🔧 v1.3.51: 支持同步保存，用于插件关闭时确保数据落盘
+     */
+    fun save(async: Boolean = true): Boolean {
+        return if (async) {
+            cn.lcofficial.guozhan.util.async { _ ->
+                try {
+                    transaction { persistUser() }
+                } catch (e: Exception) {
+                    cn.lcofficial.guozhan.Guozhan.instance.logger.severe(
+                        "异步保存用户失败 ($uniqueId): ${e.message}"
+                    )
+                    e.printStackTrace()
+                }
+            }
+            true
+        } else {
+            try {
+                transaction { persistUser() }
+                true
+            } catch (e: Exception) {
+                cn.lcofficial.guozhan.Guozhan.instance.logger.severe(
+                    "同步保存用户失败 ($uniqueId): ${e.message}"
+                )
+                e.printStackTrace()
+                false
+            }
+        }
+    }
+
+    private fun persistUser() {
+        val updatedRows = Users.update({ Users.id eq uniqueId.toString() }) {
             it[name] = name
-            it[countryId] = this@User.countryId?.let { EntityID(it.toString(), Countries) }
+            it[countryId] = this@User.countryId?.let { id -> EntityID(id.toString(), Countries) }
             it[rank] = rank
             it[title] = title
             it[profession] = profession
             it[professionLevel] = professionLevel
             it[professionSetTime] = this@User.professionSetTime
             it[claimMode] = this@User.claimMode
+        }
+
+        if (updatedRows == 0) {
+            try {
+                Users.insert {
+                    it[Users.id] = uniqueId.toString()
+                    it[Users.name] = name
+                    it[Users.countryId] = this@User.countryId?.let { id -> EntityID(id.toString(), Countries) }
+                    it[Users.rank] = rank
+                    it[Users.title] = title
+                    it[Users.profession] = profession
+                    it[Users.professionLevel] = professionLevel
+                    it[Users.professionSetTime] = this@User.professionSetTime
+                    it[Users.claimMode] = this@User.claimMode
+                }
+            } catch (insertException: Exception) {
+                val message = insertException.message ?: ""
+                val isDuplicate = message.contains("UNIQUE constraint failed") ||
+                    message.contains("Duplicate entry")
+
+                if (!isDuplicate) {
+                    throw insertException
+                }
+            }
         }
     }
 
@@ -87,7 +162,7 @@ class User(
             "manage_tribute" -> rank.value >= 2 // 管理员及以上
             "manage_economy" -> rank.value >= 2 // 管理员及以上
             "manage_territory" -> rank.value >= 2 // 管理员及以上
-            "manage_diplomacy" -> rank.value >= 3 // 仅国王
+            "manage_diplomacy" -> rank.value >= 2 // 修复：管理员及以上可以管理外交
             "manage_war" -> rank.value >= 3 // 仅国王
             "admin" -> rank.value >= 2 // 管理员及以上
             "owner" -> rank.value >= 3 // 仅国王

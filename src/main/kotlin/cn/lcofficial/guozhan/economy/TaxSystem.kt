@@ -45,16 +45,27 @@ object TaxSystem {
     
     /**
      * 加载所有税收策略
+     * 🔧 v1.3.45: 修复税收系统重启后立即收税漏洞 - 从数据库加载真实的上次收税时间
      */
     private fun loadTaxPolicies() {
         // 这里可以从数据库或配置文件加载税收策略
         // 目前使用内存存储，后续可扩展为持久化存储
         taxPolicies.clear()
         taxHistory.clear()
-        
+
         // 为所有国家设置默认税收策略
         for (country in CountryManager.countries.values) {
             val currentRate = EconomyManager.getTaxRate(country)
+
+            // 🔧 v1.3.45: 从数据库加载真实的上次收税时间，避免重启后立即收税漏洞
+            val lastCollectionTime = if (country.lastAutoTaxTime > 0L) {
+                // 使用数据库中的真实收税时间
+                country.lastAutoTaxTime
+            } else {
+                // 首次收税，使用当前时间（不允许立即收税）
+                System.currentTimeMillis()
+            }
+
             taxPolicies[country.id] = TaxPolicy(
                 baseRate = currentRate,
                 resourceMultipliers = mapOf(
@@ -66,8 +77,10 @@ object TaxSystem {
                 ),
                 loyaltyMultiplier = true,
                 progressiveTax = false,
-                lastCollectionTime = System.currentTimeMillis() - TAX_CYCLE // 设置为可以立即收税
+                lastCollectionTime = lastCollectionTime
             )
+
+            cn.lcofficial.guozhan.Guozhan.instance.logger.info("🔧 [税收系统] 为国家 ${country.name} 加载税收策略，上次收税时间: ${if (country.lastAutoTaxTime > 0L) "从数据库加载" else "首次收税（当前时间）"}")
         }
     }
     
@@ -90,6 +103,7 @@ object TaxSystem {
     
     /**
      * 获取国家的税收策略
+     * 🔧 v1.3.45: 修复税收系统重启后立即收税漏洞 - 默认策略使用当前时间
      * @param country 国家
      * @return 税收策略
      */
@@ -105,7 +119,8 @@ object TaxSystem {
             ),
             loyaltyMultiplier = true,
             progressiveTax = false,
-            lastCollectionTime = System.currentTimeMillis() - TAX_CYCLE
+            // 🔧 v1.3.45: 默认策略使用当前时间，不允许立即收税
+            lastCollectionTime = System.currentTimeMillis()
         )
     }
     
@@ -118,9 +133,27 @@ object TaxSystem {
         val policy = getTaxPolicy(country)
         return System.currentTimeMillis() - policy.lastCollectionTime >= TAX_CYCLE
     }
+
+    /**
+     * 🔧 v1.3.48: 修复问题4 - 更新税收策略的上次收税时间
+     * 用于自动税收系统同步时间戳到taxPolicies
+     * @param countryId 国家ID
+     * @param newTime 新的收税时间戳
+     */
+    fun updateLastCollectionTime(countryId: UUID, newTime: Long) {
+        val currentPolicy = taxPolicies[countryId]
+        if (currentPolicy != null) {
+            val updatedPolicy = currentPolicy.copy(lastCollectionTime = newTime)
+            taxPolicies[countryId] = updatedPolicy
+            cn.lcofficial.guozhan.Guozhan.instance.logger.fine("🔧 [税收同步] 已更新国家 $countryId 的税收策略时间戳: $newTime")
+        } else {
+            cn.lcofficial.guozhan.Guozhan.instance.logger.warning("🔧 [税收同步] 国家 $countryId 的税收策略不存在，无法更新时间戳")
+        }
+    }
     
     /**
      * 收取国家税收
+     * 🔧 v1.3.38修复：统一税收系统 - 委托给RegionalTaxSystem避免重复计算
      * @param country 国家
      * @param notify 是否通知在线成员
      * @return 收取的税收总额
@@ -129,55 +162,45 @@ object TaxSystem {
         if (!canCollectTax(country)) {
             return 0
         }
-        
+
         val policy = getTaxPolicy(country)
         if (policy.baseRate <= 0) {
             return 0
         }
-        
-        var totalTax = 0
-        val taxDetails = mutableMapOf<ResourceType, Int>()
-        
-        // 从每个领土收取税收
-        val territories = TerritoryManager.getTerritoriesByCountry(country)
-        for (territory in territories) {
-            // 根据领土忠诚度和资源类型计算税收
-            val resourceType = territory.resourceType
-            val resourceMultiplier = policy.resourceMultipliers[resourceType] ?: 1.0f
-            val baseValue = EconomyManager.resourceValues[resourceType] ?: 0
-            
-            // 计算忠诚度因子
-            val loyaltyFactor = if (policy.loyaltyMultiplier) {
-                territory.loyalty / 100.0
-            } else {
-                1.0
-            }
-            
-            // 计算该领土的税收
-            val territoryTax = (baseValue * loyaltyFactor * resourceMultiplier * policy.baseRate / 100.0).toInt()
-            
-            totalTax += territoryTax
-            
-            // 记录各资源类型的税收
-            taxDetails[resourceType] = (taxDetails[resourceType] ?: 0) + territoryTax
+
+        // 🔧 v1.3.38修复：委托给RegionalTaxSystem进行统一的税收计算
+        // 计算经过的小时数
+        val timeSinceLastCollection = System.currentTimeMillis() - policy.lastCollectionTime
+        val hours = timeSinceLastCollection / (60.0 * 60.0 * 1000.0)
+
+        // 使用RegionalTaxSystem进行统一的税收计算和收集
+        val (goldTax, diamondTax) = RegionalTaxSystem.collectTax(country, hours)
+        val totalTax = goldTax + (diamondTax * 10) // 钻石按10:1转换为金币等价值
+
+        // 🔧 v1.3.48: 修复Critical问题2 - 税收时间戳持久化缺失
+        // 更新收税时间到数据库和缓存
+        val currentTime = System.currentTimeMillis()
+        cn.lcofficial.guozhan.util.run {
+            country.lastAutoTaxTime = currentTime
+            country.save()
+            cn.lcofficial.guozhan.Guozhan.instance.logger.info("🔧 [税收系统] 已更新国家 ${country.name} 的收税时间戳到数据库")
         }
-        
-        // 更新收税时间
-        val updatedPolicy = policy.copy(lastCollectionTime = System.currentTimeMillis())
+
+        val updatedPolicy = policy.copy(lastCollectionTime = currentTime)
         taxPolicies[country.id] = updatedPolicy
-        
-        // 将税收加入国家金库
-        country.gold += totalTax
-        country.save()
-        
-        // 记录税收历史
+
+        // 记录税收历史（简化版本，保持兼容性）
+        val taxDetails = mapOf(
+            ResourceType.GOLD to goldTax,
+            ResourceType.DIAMOND to diamondTax
+        )
         recordTaxCollection(country, totalTax, taxDetails)
-        
+
         // 通知在线成员
         if (notify) {
             notifyTaxCollection(country, totalTax, taxDetails)
         }
-        
+
         return totalTax
     }
     
@@ -206,28 +229,32 @@ object TaxSystem {
     
     /**
      * 通知国家成员税收情况
+     * 🔧 v1.3.40: 修复税收消息线程违规 - 使用EntityScheduler发送玩家消息
      */
     private fun notifyTaxCollection(country: Country, totalAmount: Int, details: Map<ResourceType, Int>) {
         val onlineMembers = Bukkit.getOnlinePlayers().filter { player ->
             val user = player.user()
             user.country?.id == country.id
         }
-        
+
         if (onlineMembers.isEmpty()) return
-        
+
         for (player in onlineMembers) {
-            player.sendMessage("§6[国家税收] §a您的国家已收取税款: §f$totalAmount §a金币")
-            
-            // 如果是国家管理员或所有者，显示详细信息
-            val user = player.user()
-            if (user.rank.value >= 2) {
-                player.sendMessage("§6[税收详情]")
-                details.forEach { (resourceType, amount) ->
-                    if (amount > 0) {
-                        player.sendMessage("  §a- ${resourceType.name}: §f$amount §a金币")
+            // 使用EntityScheduler确保在正确的线程中发送消息
+            player.scheduler.run(cn.lcofficial.guozhan.Guozhan.instance, { _ ->
+                player.sendMessage("§6[国家税收] §a您的国家已收取税款: §f$totalAmount §a金币")
+
+                // 如果是国家管理员或所有者，显示详细信息
+                val user = player.user()
+                if (user.rank.value >= 2) {
+                    player.sendMessage("§6[税收详情]")
+                    details.forEach { (resourceType, amount) ->
+                        if (amount > 0) {
+                            player.sendMessage("  §a- ${resourceType.name}: §f$amount §a金币")
+                        }
                     }
                 }
-            }
+            }, null)
         }
     }
     
