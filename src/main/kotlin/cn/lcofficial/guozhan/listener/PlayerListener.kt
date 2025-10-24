@@ -23,6 +23,7 @@ object PlayerListener : Listener {
     /**
      * 处理玩家加入事件
      * 🔧 v1.3.48: 修复离线玩家科技效果丢失问题 - 确保玩家登录时获得最新科技效果
+     * 🔧 v1.3.52: 修复服务器重启时占领进度丢失 - 玩家上线时恢复占领进度
      */
     @EventHandler
     fun onPlayerJoin(event: PlayerJoinEvent) {
@@ -52,10 +53,83 @@ object PlayerListener : Listener {
                 // 🔧 v1.3.51: 修复玩家背包中的疆域地图渲染器
                 cn.lcofficial.guozhan.util.TerritoryMapUtil.restorePlayerTerritoryMaps(player)
 
+                // 🔧 v1.3.52: 恢复玩家参与的占领进度
+                restorePlayerClaimProgress(player)
+
                 cn.lcofficial.guozhan.Guozhan.instance.logger.info("🔧 [玩家加入] ${player.name} 已重新应用科技效果和职业效果")
             },
             20L // 1秒 = 20 ticks
         )
+    }
+
+    /**
+     * 🔧 v1.3.52: 恢复玩家参与的占领进度
+     */
+    private fun restorePlayerClaimProgress(player: Player) {
+        try {
+            val playerId = player.uniqueId
+            val savedProgresses = cn.lcofficial.guozhan.data.ClaimProgress.loadAll()
+
+            for (progress in savedProgresses) {
+                // 检查玩家是否是参与者
+                if (!progress.participants.contains(playerId)) {
+                    continue
+                }
+
+                // 检查进度是否过期
+                val oneHourAgo = System.currentTimeMillis() - (60 * 60 * 1000)
+                if (progress.updatedAt < oneHourAgo || progress.isCompleted()) {
+                    continue
+                }
+
+                // 获取相关对象
+                val territory = progress.getTerritory()
+                val country = progress.getCountry()
+                if (territory == null || country == null) {
+                    continue
+                }
+
+                val key = cn.lcofficial.guozhan.manager.ClaimManager.chunkKey(
+                    progress.worldName,
+                    progress.chunkX,
+                    progress.chunkZ
+                )
+
+                // 检查是否已经有占领在进行
+                val existingClaim = cn.lcofficial.guozhan.manager.ClaimManager.activeClaims[key]
+                if (existingClaim != null) {
+                    // 已有占领进度，只需添加玩家到 BossBar
+                    existingClaim.bossBar.addPlayer(player)
+                    player.sendMessage("§a占领进度已恢复！当前进度: ${(progress.calculateProgress() * 100).toInt()}%")
+                    cn.lcofficial.guozhan.Guozhan.instance.logger.info("🔧 [占领恢复] ${player.name} 加入现有占领进度 - 领土(${progress.chunkX}, ${progress.chunkZ})")
+                } else {
+                    // 没有占领进度，创建新的
+                    val bossBar = Bukkit.createBossBar("§e占领进度: §a恢复中...", org.bukkit.boss.BarColor.YELLOW, org.bukkit.boss.BarStyle.SOLID)
+                    bossBar.addPlayer(player)
+
+                    val claim = cn.lcofficial.guozhan.manager.ClaimManager.ActiveClaim(
+                        key = key,
+                        territory = territory,
+                        country = country,
+                        initiator = progress.initiatorId,
+                        startTimeMs = progress.startTime,
+                        targetTimeMs = progress.targetTime,
+                        bossBar = bossBar,
+                        claimProgress = progress
+                    )
+
+                    // 恢复参与者
+                    claim.participants.addAll(progress.participants)
+                    cn.lcofficial.guozhan.manager.ClaimManager.activeClaims[key] = claim
+
+                    player.sendMessage("§a占领进度已恢复！当前进度: ${(progress.calculateProgress() * 100).toInt()}%")
+                    cn.lcofficial.guozhan.Guozhan.instance.logger.info("🔧 [占领恢复] ${player.name} 恢复占领进度 - 领土(${progress.chunkX}, ${progress.chunkZ})")
+                }
+            }
+        } catch (e: Exception) {
+            cn.lcofficial.guozhan.Guozhan.instance.logger.severe("恢复玩家占领进度失败: ${e.message}")
+            e.printStackTrace()
+        }
     }
 
     /**

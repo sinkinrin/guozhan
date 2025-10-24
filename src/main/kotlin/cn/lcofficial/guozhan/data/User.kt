@@ -83,10 +83,11 @@ class User(
      * 保存用户数据到数据库
      * 🔧 v1.3.25: 默认异步执行，避免阻塞 region 线程
      * 🔧 v1.3.51: 支持同步保存，用于插件关闭时确保数据落盘
+     * 🔧 v1.3.52: 注册异步任务到 DataManager，防止服务器关闭时数据丢失
      */
     fun save(async: Boolean = true): Boolean {
         return if (async) {
-            cn.lcofficial.guozhan.util.async { _ ->
+            val future = java.util.concurrent.CompletableFuture.runAsync {
                 try {
                     transaction { persistUser() }
                 } catch (e: Exception) {
@@ -96,6 +97,8 @@ class User(
                     e.printStackTrace()
                 }
             }
+            // 🔧 v1.3.52: 注册异步任务
+            cn.lcofficial.guozhan.manager.DataManager.registerAsyncTask(future as java.util.concurrent.CompletableFuture<Void>)
             true
         } else {
             try {

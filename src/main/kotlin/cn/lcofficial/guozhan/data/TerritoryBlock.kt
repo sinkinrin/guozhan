@@ -159,11 +159,12 @@ class TerritoryBlock(
      * 保存领土区块数据到数据库
      * 🔧 v1.3.25: 改为异步执行，避免阻塞 region 线程
      * 🔧 v1.3.48: 修复数据丢失风险 - 添加同步保存选项和返回值
+     * 🔧 v1.3.52: 注册异步任务到 DataManager，防止服务器关闭时数据丢失
      */
     fun save(async: Boolean = true): Boolean {
         return if (async) {
             // 异步保存，返回true表示任务已提交（不保证成功）
-            cn.lcofficial.guozhan.util.async { _ ->
+            val future = java.util.concurrent.CompletableFuture.runAsync {
                 try {
                     saveInTransaction()
                 } catch (e: Exception) {
@@ -173,6 +174,8 @@ class TerritoryBlock(
                     e.printStackTrace()
                 }
             }
+            // 🔧 v1.3.52: 注册异步任务
+            cn.lcofficial.guozhan.manager.DataManager.registerAsyncTask(future as java.util.concurrent.CompletableFuture<Void>)
             true
         } else {
             // 同步保存，返回实际保存结果

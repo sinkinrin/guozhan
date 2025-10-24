@@ -309,6 +309,7 @@ object TechnologyManager {
 
     /**
      * 🔧 v1.3.51: 尝试自动修复数据库问题
+     * 🔧 v1.3.52: 修复数据丢失风险 - 只有在备份数据完整可用时才执行删除和重建操作
      */
     private fun attemptAutoRepair() {
         try {
@@ -324,72 +325,101 @@ object TechnologyManager {
                         Technologies.selectAll().toList()
                     } catch (e: Exception) {
                         Guozhan.instance.logger.warning("⚠️ [自动修复] 无法读取现有科技数据: ${e.message}")
-                        emptyList()
+                        null // 🔧 使用 null 表示备份失败
                     }
 
                     val existingResearchData = try {
                         CountryTechnologies.selectAll().toList()
                     } catch (e: Exception) {
                         Guozhan.instance.logger.warning("⚠️ [自动修复] 无法读取现有研究数据: ${e.message}")
-                        emptyList()
+                        null // 🔧 使用 null 表示备份失败
                     }
 
-                    // 3. 删除所有相关表
+                    // 🔧 v1.3.52: 安全检查 - 只有在备份数据完整可用时才执行删除操作
+                    if (existingTechData == null || existingResearchData == null) {
+                        Guozhan.instance.logger.severe("❌ [自动修复] 备份数据不完整，终止自动修复流程以避免数据丢失")
+                        Guozhan.instance.logger.severe("❌ [自动修复] 建议人工干预：")
+                        Guozhan.instance.logger.severe("   1. 检查数据库文件是否损坏")
+                        Guozhan.instance.logger.severe("   2. 尝试手动备份数据库文件")
+                        Guozhan.instance.logger.severe("   3. 联系管理员进行数据恢复")
+                        return@transaction // 🔧 立即终止修复流程
+                    }
+
+                    // 🔧 v1.3.52: 验证备份数据的完整性
+                    val techDataCount = existingTechData.size
+                    val researchDataCount = existingResearchData.size
+                    Guozhan.instance.logger.info("🔧 [自动修复] 备份数据完整性检查：科技数据 ${techDataCount} 条，研究数据 ${researchDataCount} 条")
+
+                    // 3. 删除所有相关表（只有在备份数据可用时才执行）
                     try {
                         SchemaUtils.drop(CountryTechnologies)
+                        Guozhan.instance.logger.info("🔧 [自动修复] 已删除 CountryTechnologies 表")
                     } catch (e: Exception) {
-                        Guozhan.instance.logger.warning("⚠️ [自动修复] 删除 CountryTechnologies 表失败: ${e.message}")
+                        Guozhan.instance.logger.severe("❌ [自动修复] 删除 CountryTechnologies 表失败: ${e.message}")
+                        throw e // 🔧 抛出异常，触发回滚
                     }
 
                     try {
                         SchemaUtils.drop(Technologies)
+                        Guozhan.instance.logger.info("🔧 [自动修复] 已删除 Technologies 表")
                     } catch (e: Exception) {
-                        Guozhan.instance.logger.warning("⚠️ [自动修复] 删除 Technologies 表失败: ${e.message}")
+                        Guozhan.instance.logger.severe("❌ [自动修复] 删除 Technologies 表失败: ${e.message}")
+                        throw e // 🔧 抛出异常，触发回滚
                     }
 
                     // 4. 重新创建表
                     SchemaUtils.create(Technologies, CountryTechnologies)
+                    Guozhan.instance.logger.info("🔧 [自动修复] 已重新创建表结构")
 
-                    // 5. 恢复科技数据（如果有的话）
-                    if (existingTechData.isNotEmpty()) {
-                        existingTechData.forEach { row ->
-                            try {
-                                Technologies.insert {
-                                    it[Technologies.id] = row[Technologies.id]
-                                    it[Technologies.name] = row[Technologies.name]
-                                    it[Technologies.description] = row[Technologies.description]
-                                    it[Technologies.icon] = row[Technologies.icon]
-                                    it[Technologies.maxLevel] = row[Technologies.maxLevel]
-                                    it[Technologies.prerequisites] = row[Technologies.prerequisites]
-                                    it[Technologies.costs] = row[Technologies.costs]
-                                    it[Technologies.effects] = row[Technologies.effects]
-                                    it[Technologies.category] = row[Technologies.category]
-                                    it[Technologies.enabled] = row[Technologies.enabled]
-                                }
-                            } catch (e: Exception) {
-                                Guozhan.instance.logger.warning("⚠️ [自动修复] 恢复科技数据失败: ${e.message}")
+                    // 5. 恢复科技数据
+                    var techRestoreSuccess = 0
+                    var techRestoreFailed = 0
+                    existingTechData.forEach { row ->
+                        try {
+                            Technologies.insert {
+                                it[Technologies.id] = row[Technologies.id]
+                                it[Technologies.name] = row[Technologies.name]
+                                it[Technologies.description] = row[Technologies.description]
+                                it[Technologies.icon] = row[Technologies.icon]
+                                it[Technologies.maxLevel] = row[Technologies.maxLevel]
+                                it[Technologies.prerequisites] = row[Technologies.prerequisites]
+                                it[Technologies.costs] = row[Technologies.costs]
+                                it[Technologies.effects] = row[Technologies.effects]
+                                it[Technologies.category] = row[Technologies.category]
+                                it[Technologies.enabled] = row[Technologies.enabled]
                             }
+                            techRestoreSuccess++
+                        } catch (e: Exception) {
+                            techRestoreFailed++
+                            Guozhan.instance.logger.warning("⚠️ [自动修复] 恢复科技数据失败 (${row[Technologies.id]}): ${e.message}")
                         }
-                        Guozhan.instance.logger.info("🔧 [自动修复] 已恢复${existingTechData.size} 条科技数据")
                     }
+                    Guozhan.instance.logger.info("🔧 [自动修复] 科技数据恢复完成：成功 ${techRestoreSuccess} 条，失败 ${techRestoreFailed} 条")
 
-                    // 6. 恢复研究数据（如果有的话）
-                    if (existingResearchData.isNotEmpty()) {
-                        existingResearchData.forEach { row ->
-                            try {
-                                CountryTechnologies.insert {
-                                    it[CountryTechnologies.countryId] = row[CountryTechnologies.countryId]
-                                    it[CountryTechnologies.technologyId] = row[CountryTechnologies.technologyId]
-                                    it[CountryTechnologies.level] = row[CountryTechnologies.level]
-                                    it[CountryTechnologies.researchStartTime] = row[CountryTechnologies.researchStartTime]
-                                    it[CountryTechnologies.researchEndTime] = row[CountryTechnologies.researchEndTime]
-                                    it[CountryTechnologies.isResearching] = row[CountryTechnologies.isResearching]
-                                }
-                            } catch (e: Exception) {
-                                Guozhan.instance.logger.warning("⚠️ [自动修复] 恢复研究数据失败: ${e.message}")
+                    // 6. 恢复研究数据
+                    var researchRestoreSuccess = 0
+                    var researchRestoreFailed = 0
+                    existingResearchData.forEach { row ->
+                        try {
+                            CountryTechnologies.insert {
+                                it[CountryTechnologies.countryId] = row[CountryTechnologies.countryId]
+                                it[CountryTechnologies.technologyId] = row[CountryTechnologies.technologyId]
+                                it[CountryTechnologies.level] = row[CountryTechnologies.level]
+                                it[CountryTechnologies.researchStartTime] = row[CountryTechnologies.researchStartTime]
+                                it[CountryTechnologies.researchEndTime] = row[CountryTechnologies.researchEndTime]
+                                it[CountryTechnologies.isResearching] = row[CountryTechnologies.isResearching]
                             }
+                            researchRestoreSuccess++
+                        } catch (e: Exception) {
+                            researchRestoreFailed++
+                            Guozhan.instance.logger.warning("⚠️ [自动修复] 恢复研究数据失败: ${e.message}")
                         }
-                        Guozhan.instance.logger.info("🔧 [自动修复] 已恢复${existingResearchData.size} 条研究数据")
+                    }
+                    Guozhan.instance.logger.info("🔧 [自动修复] 研究数据恢复完成：成功 ${researchRestoreSuccess} 条，失败 ${researchRestoreFailed} 条")
+
+                    // 🔧 v1.3.52: 验证恢复结果
+                    if (techRestoreFailed > 0 || researchRestoreFailed > 0) {
+                        Guozhan.instance.logger.warning("⚠️ [自动修复] 部分数据恢复失败，请检查日志并考虑人工干预")
                     }
 
                 } finally {
@@ -401,6 +431,11 @@ object TechnologyManager {
             Guozhan.instance.logger.info("🔧 [自动修复] 数据库自动修复完成")
         } catch (e: Exception) {
             Guozhan.instance.logger.severe("🔧 [自动修复] 数据库自动修复失败: ${e.message}")
+            Guozhan.instance.logger.severe("❌ [自动修复] 建议人工干预：")
+            Guozhan.instance.logger.severe("   1. 停止服务器")
+            Guozhan.instance.logger.severe("   2. 备份数据库文件 (plugins/Guozhan/guozhan.db)")
+            Guozhan.instance.logger.severe("   3. 检查数据库完整性")
+            Guozhan.instance.logger.severe("   4. 联系管理员进行数据恢复")
             e.printStackTrace()
         }
     }
@@ -1394,6 +1429,14 @@ object TechnologyManager {
             }
         }
         progressNotificationTasks.clear()
+    }
+
+    /**
+     * 获取正在进行的科技研究数量
+     * 🔧 v1.3.52: 用于热重载前检查是否有活跃的科技研究
+     */
+    fun getResearchingCount(): Int {
+        return researchingTechnologies.values.sumOf { it.size }
     }
 
 }

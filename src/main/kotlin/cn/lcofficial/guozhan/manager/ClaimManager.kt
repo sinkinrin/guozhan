@@ -38,9 +38,11 @@ object ClaimManager {
         val claimProgress: ClaimProgress
     )
 
-    private val activeClaims: MutableMap<String, ActiveClaim> = ConcurrentHashMap()
+    // 🔧 v1.3.52: 改为 internal 以便 PlayerListener 访问
+    internal val activeClaims: MutableMap<String, ActiveClaim> = ConcurrentHashMap()
 
-    private fun chunkKey(worldName: String, x: Int, z: Int): String = "$worldName:$x:$z"
+    // 🔧 v1.3.52: 改为 internal 以便 PlayerListener 访问
+    internal fun chunkKey(worldName: String, x: Int, z: Int): String = "$worldName:$x:$z"
 
     fun isClaiming(player: Player): Boolean = activeClaims.values.any { it.participants.contains(player.uniqueId) }
 
@@ -230,13 +232,14 @@ object ClaimManager {
     fun getAllActiveClaims(): Collection<ActiveClaim> = activeClaims.values
 
     /**
-     * 🔧 v1.3.48: 服务器启动时恢复占领进度
+     * 🔧 v1.3.52: 服务器启动时恢复占领进度 - 修复发起者离线时进度丢失问题
      */
     fun restoreClaimProgress() {
         try {
             val savedProgresses = ClaimProgress.loadAll()
             var restoredCount = 0
             var expiredCount = 0
+            var pendingCount = 0
 
             for (progress in savedProgresses) {
                 // 检查进度是否过期（超过1小时）
@@ -257,7 +260,6 @@ object ClaimManager {
                 // 获取相关对象
                 val territory = progress.getTerritory()
                 val country = progress.getCountry()
-                val initiator = Bukkit.getPlayer(progress.initiatorId)
 
                 if (territory == null || country == null) {
                     progress.delete()
@@ -265,18 +267,26 @@ object ClaimManager {
                     continue
                 }
 
-                // 如果发起者在线，恢复占领进度
-                if (initiator != null) {
-                    val key = chunkKey(progress.worldName, progress.chunkX, progress.chunkZ)
+                val key = chunkKey(progress.worldName, progress.chunkX, progress.chunkZ)
 
-                    // 检查是否已经有占领在进行
-                    if (activeClaims.containsKey(key)) {
-                        progress.delete()
-                        continue
-                    }
+                // 检查是否已经有占领在进行
+                if (activeClaims.containsKey(key)) {
+                    progress.delete()
+                    continue
+                }
 
+                // 🔧 v1.3.52: 检查是否有任何参与者在线（不仅仅是发起者）
+                val onlineParticipants = progress.participants.mapNotNull { Bukkit.getPlayer(it) }
+
+                if (onlineParticipants.isNotEmpty()) {
+                    // 有参与者在线，恢复占领进度
                     val bossBar = Bukkit.createBossBar("§e占领进度: §a恢复中...", BarColor.YELLOW, BarStyle.SOLID)
-                    bossBar.addPlayer(initiator)
+
+                    // 为所有在线参与者显示 BossBar
+                    onlineParticipants.forEach { player ->
+                        bossBar.addPlayer(player)
+                        player.sendMessage("§a占领进度已恢复！当前进度: ${(progress.calculateProgress() * 100).toInt()}%")
+                    }
 
                     val claim = ActiveClaim(
                         key = key,
@@ -293,17 +303,18 @@ object ClaimManager {
                     claim.participants.addAll(progress.participants)
                     activeClaims[key] = claim
 
-                    initiator.sendMessage("§a占领进度已恢复！当前进度: ${(progress.calculateProgress() * 100).toInt()}%")
                     restoredCount++
+                    pluginLogger.info("🔧 v1.3.52: 恢复占领进度 - 领土(${progress.chunkX}, ${progress.chunkZ})，在线参与者: ${onlineParticipants.size}/${progress.participants.size}")
                 } else {
-                    // 发起者不在线，删除进度
-                    progress.delete()
-                    expiredCount++
+                    // 🔧 v1.3.52: 所有参与者都离线，保留进度记录，等待任一参与者上线时继续
+                    // 不删除进度，让 PlayerListener 在玩家上线时恢复
+                    pendingCount++
+                    pluginLogger.info("🔧 v1.3.52: 占领进度待恢复 - 领土(${progress.chunkX}, ${progress.chunkZ})，等待参与者上线")
                 }
             }
 
-            if (restoredCount > 0 || expiredCount > 0) {
-                pluginLogger.info("🔧 v1.3.48: 占领进度恢复完成 - 恢复${restoredCount}个，清理${expiredCount}个过期进度")
+            if (restoredCount > 0 || expiredCount > 0 || pendingCount > 0) {
+                pluginLogger.info("🔧 v1.3.52: 占领进度恢复完成 - 恢复${restoredCount}个，待恢复${pendingCount}个，清理${expiredCount}个过期进度")
             }
 
             // 清理过期进度

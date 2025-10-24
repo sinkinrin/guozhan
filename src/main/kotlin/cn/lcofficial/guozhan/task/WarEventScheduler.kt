@@ -2,6 +2,7 @@ package cn.lcofficial.guozhan.task
 
 import cn.lcofficial.guozhan.Guozhan
 import cn.lcofficial.guozhan.config.Config
+import cn.lcofficial.guozhan.data.WarEvent
 import cn.lcofficial.guozhan.manager.CountryManager
 import cn.lcofficial.guozhan.manager.TerritoryManager
 import org.bukkit.Bukkit
@@ -19,15 +20,61 @@ class WarEventScheduler {
     private var warStartTime: LocalDateTime? = null
     private val warScores = mutableMapOf<UUID, Int>()
 
+    // 🔧 v1.3.52: 战争状态持久化 - 当前战争事件
+    private var currentWarEvent: WarEvent? = null
+
+    // 🔧 v1.3.52: 时间窗口容错 - 记录上次状态检查时间
+    private var lastStateCheckTime: LocalDateTime = LocalDateTime.now()
+
     // 🔧 v1.3.31: 移除硬编码常量，改为从配置文件读取
     // 战争时间配置现在从 Config.War 对象读取
-    
+
+    /**
+     * 初始化战争调度器
+     * 🔧 v1.3.52: 从数据库恢复战争状态（如果服务器在战争期间重启）
+     */
+    fun initialize() {
+        try {
+            val activeWars = WarEvent.loadAllActive()
+            if (activeWars.isNotEmpty()) {
+                val warEvent = activeWars.first()
+                currentWarEvent = warEvent
+                isWarActive = true
+                warStartTime = LocalDateTime.ofEpochSecond(
+                    warEvent.startTime / 1000,
+                    (warEvent.startTime % 1000).toInt() * 1000000,
+                    java.time.ZoneOffset.systemDefault().rules.getOffset(java.time.Instant.now())
+                )
+                warScores.clear()
+                warScores.putAll(warEvent.warScores)
+
+                Guozhan.instance.logger.info("[王战系统] 从数据库恢复战争状态: 战争ID=${warEvent.id}, 开始时间=${warStartTime}, 积分数=${warScores.size}")
+                Bukkit.broadcastMessage("§6[王战] §e服务器重启后战争继续进行！")
+            } else {
+                Guozhan.instance.logger.info("[王战系统] 初始化完成，当前无进行中的战争")
+            }
+        } catch (e: Exception) {
+            Guozhan.instance.logger.severe("[王战系统] 初始化失败: ${e.message}")
+            e.printStackTrace()
+        }
+    }
+
     fun run() {
         val now = LocalDateTime.now()
 
+        // 🔧 v1.3.52: 检查是否应该开始战争（包括错过的时间窗口）
         if (!isWarActive && shouldStartWar(now)) {
             startWar()
-        } else if (isWarActive && shouldEndWar(now)) {
+        } else if (!isWarActive && missedWarStart(now)) {
+            Guozhan.instance.logger.warning("[王战系统] 检测到错过战争开始时间，立即开始战争")
+            startWar()
+        }
+
+        // 🔧 v1.3.52: 检查是否应该结束战争（包括错过的时间窗口）
+        if (isWarActive && shouldEndWar(now)) {
+            endWar()
+        } else if (isWarActive && missedWarEnd(now)) {
+            Guozhan.instance.logger.warning("[王战系统] 检测到错过战争结束时间，立即结束战争")
             endWar()
         }
 
@@ -35,6 +82,9 @@ class WarEventScheduler {
         if (isWarActive && now.toLocalTime().isAfter(LocalTime.of(Config.War.startHour, Config.War.startMinute))) {
             updateWarScores()
         }
+
+        // 🔧 v1.3.52: 更新上次检查时间
+        lastStateCheckTime = now
     }
 
     private fun shouldStartWar(now: LocalDateTime): Boolean {
@@ -54,41 +104,114 @@ class WarEventScheduler {
         return now.dayOfWeek == DayOfWeek.of(Config.War.day) &&
                !currentTime.isBefore(endTime) && currentTime.isBefore(windowEnd)
     }
+
+    /**
+     * 检查是否错过了战争开始时间
+     * 🔧 v1.3.52: 容错机制 - 如果上次检查时间在开始窗口之前，当前时间在开始窗口之后，则认为错过了
+     */
+    private fun missedWarStart(now: LocalDateTime): Boolean {
+        if (isWarActive) return false
+
+        val startTime = LocalTime.of(Config.War.prepareHour, Config.War.prepareMinute)
+        val windowEnd = startTime.plusMinutes(1)
+        val warEndTime = LocalTime.of(Config.War.endHour, Config.War.endMinute)
+
+        return now.dayOfWeek == DayOfWeek.of(Config.War.day) &&
+               lastStateCheckTime.toLocalTime().isBefore(startTime) &&
+               now.toLocalTime().isAfter(windowEnd) &&
+               now.toLocalTime().isBefore(warEndTime)
+    }
+
+    /**
+     * 检查是否错过了战争结束时间
+     * 🔧 v1.3.52: 容错机制 - 如果上次检查时间在结束窗口之前，当前时间在结束窗口之后，则认为错过了
+     */
+    private fun missedWarEnd(now: LocalDateTime): Boolean {
+        if (!isWarActive) return false
+
+        val endTime = LocalTime.of(Config.War.endHour, Config.War.endMinute)
+        val windowEnd = endTime.plusMinutes(1)
+
+        return now.dayOfWeek == DayOfWeek.of(Config.War.day) &&
+               lastStateCheckTime.toLocalTime().isBefore(endTime) &&
+               now.toLocalTime().isAfter(windowEnd)
+    }
     
     private fun startWar() {
         isWarActive = true
         warStartTime = LocalDateTime.now()
         warScores.clear()
-        
+
+        // 🔧 v1.3.52: 持久化战争状态到数据库
+        try {
+            val warEvent = WarEvent(
+                id = UUID.randomUUID(),
+                startTime = System.currentTimeMillis(),
+                isActive = true,
+                warScores = warScores
+            )
+            warEvent.save()
+            currentWarEvent = warEvent
+            Guozhan.instance.logger.info("[王战系统] 战争状态已保存到数据库: 战争ID=${warEvent.id}")
+        } catch (e: Exception) {
+            Guozhan.instance.logger.severe("[王战系统] 保存战争状态失败: ${e.message}")
+            e.printStackTrace()
+        }
+
         Bukkit.getOnlinePlayers().forEach { player ->
             player.sendTitle("§c国战开始", "§e准备时间: 19:00-19:20", 10, 70, 20)
         }
-        
+
         Bukkit.broadcastMessage("§6[国战] §c国战准备阶段开始！正式战斗将在20分钟后开始")
     }
     
     private fun endWar() {
         isWarActive = false
-        
+
         val winners = calculateWinners()
         distributeRewards(winners)
-        
+
+        // 🔧 v1.3.52: 清理数据库中的战争状态
+        try {
+            currentWarEvent?.let { warEvent ->
+                warEvent.isActive = false
+                warEvent.delete()
+                Guozhan.instance.logger.info("[王战系统] 战争状态已从数据库删除: 战争ID=${warEvent.id}")
+            }
+            currentWarEvent = null
+        } catch (e: Exception) {
+            Guozhan.instance.logger.severe("[王战系统] 删除战争状态失败: ${e.message}")
+            e.printStackTrace()
+        }
+
         Bukkit.getOnlinePlayers().forEach { player ->
             player.sendTitle("§a国战结束", "§e查看奖励箱获取战利品", 10, 70, 20)
         }
-        
+
         Bukkit.broadcastMessage("§6[国战] §a国战结束！奖励已发放至各国王城")
     }
     
     private fun updateWarScores() {
         val countries = CountryManager.countries.values
-        
+
         countries.forEach { country ->
             val coreTerritories = getCoreTerritories(country)
             val score = coreTerritories.size
             // 改为“累计积分”而不是覆盖：每次更新都在已有基础上累加
             val current = warScores.getOrDefault(country.id, 0)
             warScores[country.id] = current + score
+        }
+
+        // 🔧 v1.3.52: 更新数据库中的战争积分
+        try {
+            currentWarEvent?.let { warEvent ->
+                warEvent.warScores.clear()
+                warEvent.warScores.putAll(warScores)
+                warEvent.save()
+            }
+        } catch (e: Exception) {
+            Guozhan.instance.logger.severe("[王战系统] 更新战争积分失败: ${e.message}")
+            e.printStackTrace()
         }
     }
     

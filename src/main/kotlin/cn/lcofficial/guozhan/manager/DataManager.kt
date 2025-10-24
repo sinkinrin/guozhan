@@ -12,6 +12,7 @@ import cn.lcofficial.guozhan.data.Technologies
 import cn.lcofficial.guozhan.data.Territories
 import cn.lcofficial.guozhan.data.TerritoryBlocks
 import cn.lcofficial.guozhan.data.Users
+import cn.lcofficial.guozhan.data.WarEvents
 import cn.lcofficial.guozhan.pluginLogger
 import com.zaxxer.hikari.HikariDataSource
 import org.jetbrains.exposed.sql.Database
@@ -20,9 +21,15 @@ import org.jetbrains.exposed.sql.transactions.transaction
 import org.jetbrains.exposed.sql.*
 import java.io.File
 import java.util.logging.Level
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ConcurrentHashMap
+import java.util.Collections
 
 object DataManager {
     lateinit var dataSource: HikariDataSource
+
+    // 🔧 v1.3.52: 跟踪所有异步保存任务，防止服务器关闭时数据丢失
+    private val pendingAsyncTasks = Collections.newSetFromMap(ConcurrentHashMap<CompletableFuture<Void>, Boolean>())
 
     fun init(plugin: Guozhan) {
         // 🔧 v1.3.51: 修复热重载问题 - 关闭数据源前等待异步操作完成
@@ -73,9 +80,10 @@ object DataManager {
         try {
             Database.connect(dataSource)
             transaction {
+                // 🔧 v1.3.52: 添加 WarEvents 表到数据库迁移
                 MigrationUtils.statementsRequiredForDatabaseMigration(
                     Users, Countries, Cities, TerritoryBlocks, Territories,
-                    DiplomaticRelations, Technologies, CountryTechnologies, ClaimProgresses
+                    DiplomaticRelations, Technologies, CountryTechnologies, ClaimProgresses, WarEvents
                 ).forEach(::exec)
             }
             pluginLogger.info("连接成功")
@@ -83,7 +91,24 @@ object DataManager {
             // 执行数据完整性检查和修复
             performDataIntegrityCheck()
         } catch (e: Exception) {
-            pluginLogger.log(Level.SEVERE, "数据库连接失败", e)
+            // 🔧 v1.3.52: 修复数据库连接失败后插件仍继续运行 - 抛出异常终止插件启动
+            pluginLogger.log(Level.SEVERE, "数据库连接失败，插件将被禁用", e)
+            pluginLogger.severe("=".repeat(60))
+            pluginLogger.severe("数据库连接失败！请检查以下配置：")
+            pluginLogger.severe("1. 数据库类型：${Config.Database.type}")
+            if (Config.Database.type == Config.Database.Type.MYSQL) {
+                pluginLogger.severe("2. MySQL 主机：${Config.Database.host}:${Config.Database.port}")
+                pluginLogger.severe("3. MySQL 数据库名：${Config.Database.database}")
+                pluginLogger.severe("4. MySQL 用户名：${Config.Database.username}")
+                pluginLogger.severe("5. 请确认 MySQL 服务已启动且用户名密码正确")
+            } else {
+                pluginLogger.severe("2. SQLite 数据库文件：${plugin.dataFolder.path}${File.separator}guozhan.db")
+                pluginLogger.severe("3. 请确认插件有读写权限")
+            }
+            pluginLogger.severe("=".repeat(60))
+
+            // 抛出异常，让 Guozhan.onEnable() 捕获并禁用插件
+            throw IllegalStateException("数据库连接失败，无法启动插件", e)
         }
     }
 
@@ -187,17 +212,52 @@ object DataManager {
     }
 
     /**
+     * 注册异步任务
+     * 🔧 v1.3.52: 用于跟踪所有异步数据库写入任务，防止服务器关闭时数据丢失
+     */
+    fun registerAsyncTask(task: CompletableFuture<Void>) {
+        pendingAsyncTasks.add(task)
+        task.whenComplete { _, _ ->
+            pendingAsyncTasks.remove(task)
+        }
+    }
+
+    /**
      * 等待异步操作完成
-     * 🔧 v1.3.51: 修复热重载问题 - 在关闭数据库连接池前等待异步保存操作完成
+     * 🔧 v1.3.52: 修复数据丢失风险 - 等待所有异步任务完成或超时
      */
     private fun waitForAsyncOperations() {
         try {
-            // 等待一小段时间让异步操作完成
-            Thread.sleep(500)
-            Guozhan.instance.logger.info("已等待异步操作完成")
+            val startTime = System.currentTimeMillis()
+            val timeout = 10000L // 10秒超时
+
+            if (pendingAsyncTasks.isEmpty()) {
+                Guozhan.instance.logger.info("[数据库] 无待处理的异步保存任务")
+                return
+            }
+
+            Guozhan.instance.logger.info("[数据库] 等待 ${pendingAsyncTasks.size} 个异步保存任务完成...")
+
+            while (pendingAsyncTasks.isNotEmpty()) {
+                val elapsed = System.currentTimeMillis() - startTime
+                if (elapsed > timeout) {
+                    Guozhan.instance.logger.warning("[数据库] 等待异步任务超时，仍有 ${pendingAsyncTasks.size} 个任务未完成")
+                    break
+                }
+                Thread.sleep(100)
+
+                // 每秒输出一次进度
+                if (elapsed % 1000 < 100) {
+                    Guozhan.instance.logger.info("[数据库] 等待中... 剩余 ${pendingAsyncTasks.size} 个任务，已等待 ${elapsed}ms")
+                }
+            }
+
+            if (pendingAsyncTasks.isEmpty()) {
+                Guozhan.instance.logger.info("[数据库] 所有异步保存任务已完成")
+            }
         } catch (e: InterruptedException) {
             Thread.currentThread().interrupt()
-            Guozhan.instance.logger.warning("等待异步操作时被中断")
+            Guozhan.instance.logger.warning("[数据库] 等待异步操作时被中断")
         }
     }
 }

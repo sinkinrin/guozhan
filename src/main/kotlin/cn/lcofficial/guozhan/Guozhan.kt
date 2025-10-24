@@ -48,21 +48,35 @@ class Guozhan : JavaPlugin() {
     }
     
     override fun onEnable() {
-        initialize()
+        // 🔧 v1.3.52: 修复数据库连接失败后插件仍继续运行 - 捕获初始化异常并禁用插件
+        try {
+            initialize()
+        } catch (e: IllegalStateException) {
+            logger.severe("插件初始化失败：${e.message}")
+            logger.severe("插件将被禁用，请修复配置后重新启动服务器")
+            server.pluginManager.disablePlugin(this)
+            return
+        } catch (e: Exception) {
+            logger.severe("插件初始化时发生未知错误：${e.message}")
+            e.printStackTrace()
+            server.pluginManager.disablePlugin(this)
+            return
+        }
+
         // 注册主命�?
         getCommand("u")!!.setExecutor(GuozhanCommand)
         getCommand("u")!!.tabCompleter = GuozhanCommand
-        
+
         // 注册贡献命令
         val tributeCommand = cn.lcofficial.guozhan.command.TributeCommand()
         getCommand("tribute")!!.setExecutor(tributeCommand)
         getCommand("tribute")!!.tabCompleter = tributeCommand
-        
+
         // 注册税收命令
         val taxCommand = cn.lcofficial.guozhan.command.TaxCommand()
         getCommand("tax")!!.setExecutor(taxCommand)
         getCommand("tax")!!.tabCompleter = taxCommand
-        
+
         // 注册聊天命令
         val globalChatCommand = cn.lcofficial.guozhan.command.GlobalChatCommand()
         getCommand("c")!!.setExecutor(globalChatCommand)
@@ -221,6 +235,10 @@ class Guozhan : JavaPlugin() {
         // 🔧 v1.3.48: 恢复占领进度
         pluginLogger.info("正在恢复占领进度...")
         cn.lcofficial.guozhan.manager.ClaimManager.restoreClaimProgress()
+
+        // 🔧 v1.3.52: 初始化战争调度器（恢复战争状态）
+        pluginLogger.info("正在初始化战争调度器...")
+        warScheduler.initialize()
 
         // 初始化Squaremap集成
         squaremapIntegration.initialize()

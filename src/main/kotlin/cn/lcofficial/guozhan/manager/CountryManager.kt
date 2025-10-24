@@ -656,15 +656,19 @@ object CountryManager {
 
     /**
      * 刷新国家成员缓存
+     * 🔧 v1.3.52: 修复线程安全问题 - 使用 ConcurrentHashMap.newKeySet() 确保并发安全
      *
      * @param countryId 国家ID
      */
     fun refreshMemberCache(countryId: UUID) {
         transaction {
-            val members = Users.selectAll()
+            // 🔧 使用线程安全的集合，避免 ConcurrentModificationException
+            val members = ConcurrentHashMap.newKeySet<UUID>()
+            Users.selectAll()
                 .where { Users.countryId eq EntityID(countryId.toString(), Countries) }
-                .map { UUID.fromString(it[Users.id].value) }
-                .toMutableSet()
+                .forEach { row ->
+                    members.add(UUID.fromString(row[Users.id].value))
+                }
 
             memberCache[countryId] = members
             pluginLogger.info("[成员缓存] 已刷新国家${countryId} 的成员缓存，共${members.size} 人")
