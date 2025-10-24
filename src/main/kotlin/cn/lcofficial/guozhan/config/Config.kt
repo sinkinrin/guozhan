@@ -120,6 +120,12 @@ object Config : Configuration("config.yml") {
         }
     }
 
+    internal object Debug : StaticLazy {
+        object DataVisualization : StaticLazy {
+            var enabled by bool("debug.data-visualization.enabled", false)
+        }
+    }
+
     internal object Tax : StaticLazy {
         // 🔧 v1.3.31: 修复税收区域调整被绕过的问题
         // 从配置文件读取税收区域设置，而不是使用硬编码值
@@ -253,6 +259,8 @@ object Config : Configuration("config.yml") {
         Technology.init()
         Shield.init()
         Profession.init()
+        Debug.init()
+        Debug.DataVisualization.init()
         Tax.init()
         War.init()
         Territory.init()

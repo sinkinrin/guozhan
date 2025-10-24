@@ -136,6 +136,11 @@ random-spawn:
   min-y-level: 60
   max-y-level: 120
 
+# 调试与可视化
+debug:
+  data-visualization:
+    enabled: false
+
 # 消息设置
 messages:
   prefix: "§6[国战] §r"

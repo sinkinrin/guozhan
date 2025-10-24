@@ -222,6 +222,8 @@ object DataManager {
         }
     }
 
+    fun getPendingAsyncTaskCount(): Int = pendingAsyncTasks.size
+
     /**
      * 等待异步操作完成
      * 🔧 v1.3.52: 修复数据丢失风险 - 等待所有异步任务完成或超时

@@ -76,6 +76,10 @@ class Guozhan : JavaPlugin() {
         val taxCommand = cn.lcofficial.guozhan.command.TaxCommand()
         getCommand("tax")!!.setExecutor(taxCommand)
         getCommand("tax")!!.tabCompleter = taxCommand
+        val debugCommand = cn.lcofficial.guozhan.command.DebugCommand()
+        getCommand("gz")!!.setExecutor(debugCommand)
+        getCommand("gz")!!.tabCompleter = debugCommand
+
 
         // 注册聊天命令
         val globalChatCommand = cn.lcofficial.guozhan.command.GlobalChatCommand()

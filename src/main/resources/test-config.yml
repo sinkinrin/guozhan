@@ -21,6 +21,10 @@ test-environment:
     diamond: 500       # 国库钻石（原5000 → 500）
     economy-points: 1000  # 经济点数（原10000 → 1000）
 
+debug:
+  data-visualization:
+    enabled: true
+
 # 测试专用的国家设置
 country:
   max-name-length: 12

@@ -17,6 +17,11 @@ commands:
   tax:
     description: '税收系统命令'
     aliases: [taxes]
+  gz:
+    description: '调试数据可视化命令'
+    permission: guozhan.admin.debug
+    permission-message: '你没有权限使用调试可视化命令'
+
   c:
     description: '全球聊天命令'
     aliases: [global]
