@@ -1,6 +1,7 @@
 package cn.lcofficial.guozhan.data
 
 import cn.lcofficial.guozhan.manager.CountryManager
+import cn.lcofficial.guozhan.manager.DataManager
 import cn.lcofficial.guozhan.manager.TerritoryManager
 import cn.lcofficial.guozhan.pluginLogger
 import org.jetbrains.exposed.dao.id.IdTable
@@ -13,6 +14,7 @@ import org.jetbrains.exposed.sql.transactions.transaction
 import java.util.Collections
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CompletableFuture
 
 /**
  * 占领进度表
@@ -67,14 +69,17 @@ class ClaimProgress(
     fun save(async: Boolean = true): Boolean {
         updatedAt = System.currentTimeMillis()
         return if (async) {
-            cn.lcofficial.guozhan.util.async { _ ->
+            // 🔧 v1.3.52: 修复问题1 (High) - 注册异步任务到DataManager，防止关闭时数据丢失
+            @Suppress("UNCHECKED_CAST")
+            val future = CompletableFuture.runAsync {
                 try {
                     saveInternal()
                 } catch (e: Exception) {
                     pluginLogger.severe("保存占领进度失败 ($id): ${e.message}")
                     e.printStackTrace()
                 }
-            }
+            }.thenApply { null as Void? } as CompletableFuture<Void>
+            DataManager.registerAsyncTask(future)
             true
         } else {
             try {

@@ -1,6 +1,7 @@
 package cn.lcofficial.guozhan.debug
 
 import cn.lcofficial.guozhan.config.Config
+import cn.lcofficial.guozhan.data.Profession
 import cn.lcofficial.guozhan.economy.RegionalTaxSystem
 import cn.lcofficial.guozhan.economy.TaxSystem
 import cn.lcofficial.guozhan.manager.CountryManager
@@ -16,6 +17,7 @@ import cn.lcofficial.guozhan.manager.UserManager.user
 import cn.lcofficial.guozhan.manager.WarManager
 import cn.lcofficial.guozhan.manager.WarScoreBossBarManager
 import cn.lcofficial.guozhan.pluginLogger
+import cn.lcofficial.guozhan.util.async
 import org.bukkit.Bukkit
 import org.bukkit.command.CommandSender
 import java.util.UUID
@@ -362,53 +364,63 @@ object DebugVisualizationManager {
         }
         val totalUsers = UserManager.users.size
 
-        return CompletableFuture.supplyAsync {
-            val territoryCountByCountry = territorySnapshot.groupingBy { it.ownerId }.eachCount()
-            val totalTerritories = territorySnapshot.size
-            val lines = mutableListOf<String>()
-            lines += DebugVisualizationFormatter.summaryLine("§e总国家数", "§f${countries.size}")
-            lines += DebugVisualizationFormatter.summaryLine("§e总领土数", "§f$totalTerritories")
-            lines += DebugVisualizationFormatter.summaryLine("§e总玩家数", "§f$totalUsers")
-            lines += ""
-            lines += DebugVisualizationFormatter.section("国家列表 (最多显示50条)")
+        // 🔧 修复问题2 (Medium): 使用Folia管理的asyncScheduler替代ForkJoinPool
+        return CompletableFuture<DebugVisualizationFrame>().apply {
+            async { _ ->
+                try {
+                    val territoryCountByCountry = territorySnapshot.groupingBy { it.ownerId }.eachCount()
+                    val totalTerritories = territorySnapshot.size
+                    val lines = mutableListOf<String>()
+                    lines += DebugVisualizationFormatter.summaryLine("§e总国家数", "§f${countries.size}")
+                    lines += DebugVisualizationFormatter.summaryLine("§e总领土数", "§f$totalTerritories")
+                    lines += DebugVisualizationFormatter.summaryLine("§e总玩家数", "§f$totalUsers")
+                    lines += ""
+                    lines += DebugVisualizationFormatter.section("国家列表 (最多显示50条)")
 
-            val sorted = countries.sortedWith(
-                compareByDescending<CountrySnapshot> { territoryCountByCountry[it.id] ?: 0 }
-                    .thenByDescending { memberCounts[it.id] ?: 0 }
-                    .thenBy { it.name }
-            )
+                    val sorted = countries.sortedWith(
+                        compareByDescending<CountrySnapshot> { territoryCountByCountry[it.id] ?: 0 }
+                            .thenByDescending { memberCounts[it.id] ?: 0 }
+                            .thenBy { it.name }
+                    )
 
-            val warnings = mutableListOf<String>()
-            if (sorted.size > 50) {
-                warnings += "仅展示前50个国家，剩余 ${sorted.size - 50} 个已被省略。"
-            }
+                    val warnings = mutableListOf<String>()
+                    if (sorted.size > 50) {
+                        warnings += "仅展示前50个国家，剩余 ${sorted.size - 50} 个已被省略。"
+                    }
 
-            sorted.take(50).forEachIndexed { index, snapshot ->
-                val territoryCount = territoryCountByCountry[snapshot.id] ?: 0
-                val members = memberCounts[snapshot.id] ?: 0
-                lines += DebugVisualizationFormatter.bulletLine(index + 1, snapshot.name, DebugVisualizationFormatter.maskUuid(snapshot.id))
-                lines += DebugVisualizationFormatter.detailLine("   成员", "§f$members 人")
-                lines += DebugVisualizationFormatter.detailLine("   领土", "§f$territoryCount 块")
-                lines += DebugVisualizationFormatter.detailLine(
-                    "   国库",
-                    "§f铁锭×${snapshot.gold}, 钻石×${snapshot.diamond}, 经济点数×${snapshot.economyPoints}"
-                )
-                val shieldStatus = if (snapshot.shield) {
-                    "§a激活中 (${formatDuration(snapshot.shieldRemaining)})"
-                } else {
-                    "§c未激活"
+                    sorted.take(50).forEachIndexed { index, snapshot ->
+                        val territoryCount = territoryCountByCountry[snapshot.id] ?: 0
+                        val members = memberCounts[snapshot.id] ?: 0
+                        lines += DebugVisualizationFormatter.bulletLine(index + 1, snapshot.name, DebugVisualizationFormatter.maskUuid(snapshot.id))
+                        lines += DebugVisualizationFormatter.detailLine("   成员", "§f$members 人")
+                        lines += DebugVisualizationFormatter.detailLine("   领土", "§f$territoryCount 块")
+                        lines += DebugVisualizationFormatter.detailLine(
+                            "   国库",
+                            "§f铁锭×${snapshot.gold}, 钻石×${snapshot.diamond}, 经济点数×${snapshot.economyPoints}"
+                        )
+                        val shieldStatus = if (snapshot.shield) {
+                            "§a激活中 (${formatDuration(snapshot.shieldRemaining)})"
+                        } else {
+                            "§c未激活"
+                        }
+                        // 🔧 修复问题3 (Low): 屏蔽alpha通道，避免负数导致无效的十六进制字符串
+                        val colorHex = if (snapshot.mapColor != 0) "§f#${(snapshot.mapColor and 0xFFFFFF).toString(16).padStart(6, '0')}" else "§7未配置"
+                        lines += DebugVisualizationFormatter.detailLine("   护盾", shieldStatus)
+                        lines += DebugVisualizationFormatter.detailLine("   Core 生命值", "§f${snapshot.coreHealth}")
+                        lines += DebugVisualizationFormatter.detailLine("   地图颜色", colorHex)
+                    }
+
+                    complete(DebugVisualizationFrame(
+                        title = "国家系统数据 - 总览",
+                        lines = lines,
+                        warnings = warnings
+                    ))
+                } catch (e: Exception) {
+                    pluginLogger.severe("国家总览可视化处理失败: ${e.message}")
+                    e.printStackTrace()
+                    completeExceptionally(e)
                 }
-                val colorHex = if (snapshot.mapColor != 0) "§f#${snapshot.mapColor.toString(16).padStart(6, '0')}" else "§7未配置"
-                lines += DebugVisualizationFormatter.detailLine("   护盾", shieldStatus)
-                lines += DebugVisualizationFormatter.detailLine("   Core 生命值", "§f${snapshot.coreHealth}")
-                lines += DebugVisualizationFormatter.detailLine("   地图颜色", colorHex)
             }
-
-            DebugVisualizationFrame(
-                title = "国家系统数据 - 总览",
-                lines = lines,
-                warnings = warnings
-            )
         }
     }
 
@@ -418,47 +430,56 @@ object DebugVisualizationManager {
         }
         val countries = CountryManager.countries.values.associateBy { it.id }
 
-        return CompletableFuture.supplyAsync {
-            val total = territorySnapshot.size
-            val wild = territorySnapshot.count { it.ownerId == null }
-            val byCountry = territorySnapshot.groupingBy { it.ownerId }.eachCount()
-            val byWorld = territorySnapshot.groupingBy { it.world }.eachCount()
+        // 🔧 修复问题2 (Medium): 使用Folia管理的asyncScheduler替代ForkJoinPool
+        return CompletableFuture<DebugVisualizationFrame>().apply {
+            async { _ ->
+                try {
+                    val total = territorySnapshot.size
+                    val wild = territorySnapshot.count { it.ownerId == null }
+                    val byCountry = territorySnapshot.groupingBy { it.ownerId }.eachCount()
+                    val byWorld = territorySnapshot.groupingBy { it.world }.eachCount()
 
-            val lines = mutableListOf<String>()
-            lines += DebugVisualizationFormatter.summaryLine("§e总领土数", "§f$total")
-            lines += DebugVisualizationFormatter.summaryLine("§e荒野领土", "§f$wild")
-            lines += ""
-            lines += DebugVisualizationFormatter.section("按国家统计 (最多显示50条)")
+                    val lines = mutableListOf<String>()
+                    lines += DebugVisualizationFormatter.summaryLine("§e总领土数", "§f$total")
+                    lines += DebugVisualizationFormatter.summaryLine("§e荒野领土", "§f$wild")
+                    lines += ""
+                    lines += DebugVisualizationFormatter.section("按国家统计 (最多显示50条)")
 
-            val countryEntries = byCountry
-                .filterKeys { it != null }
-                .map { (countryId, count) ->
-                    val country = countries[countryId]
-                    CountryTerritorySummary(countryId!!, country?.name ?: "未知国家", count)
+                    val countryEntries = byCountry
+                        .filterKeys { it != null }
+                        .map { (countryId, count) ->
+                            val country = countries[countryId]
+                            CountryTerritorySummary(countryId!!, country?.name ?: "未知国家", count)
+                        }
+                        .sortedByDescending { it.count }
+
+                    val warnings = mutableListOf<String>()
+                    if (countryEntries.size > 50) {
+                        warnings += "国家领土统计仅展示前50条，剩余 ${countryEntries.size - 50} 条已省略。"
+                    }
+
+                    countryEntries.take(50).forEachIndexed { index, summary ->
+                        lines += DebugVisualizationFormatter.bulletLine(index + 1, summary.name, DebugVisualizationFormatter.maskUuid(summary.id))
+                        lines += DebugVisualizationFormatter.detailLine("   领土", "§f${summary.count} 块")
+                    }
+
+                    lines += ""
+                    lines += DebugVisualizationFormatter.section("按世界统计")
+                    byWorld.entries.sortedByDescending { it.value }.forEach { (world, count) ->
+                        lines += DebugVisualizationFormatter.detailLine("   $world", "§f$count 块")
+                    }
+
+                    complete(DebugVisualizationFrame(
+                        title = "领土系统数据 - 分布统计",
+                        lines = lines,
+                        warnings = warnings
+                    ))
+                } catch (e: Exception) {
+                    pluginLogger.severe("领土总览可视化处理失败: ${e.message}")
+                    e.printStackTrace()
+                    completeExceptionally(e)
                 }
-                .sortedByDescending { it.count }
-
-            val warnings = mutableListOf<String>()
-            if (countryEntries.size > 50) {
-                warnings += "国家领土统计仅展示前50条，剩余 ${countryEntries.size - 50} 条已省略。"
             }
-
-            countryEntries.take(50).forEachIndexed { index, summary ->
-                lines += DebugVisualizationFormatter.bulletLine(index + 1, summary.name, DebugVisualizationFormatter.maskUuid(summary.id))
-                lines += DebugVisualizationFormatter.detailLine("   领土", "§f${summary.count} 块")
-            }
-
-            lines += ""
-            lines += DebugVisualizationFormatter.section("按世界统计")
-            byWorld.entries.sortedByDescending { it.value }.forEach { (world, count) ->
-                lines += DebugVisualizationFormatter.detailLine("   $world", "§f$count 块")
-            }
-
-            DebugVisualizationFrame(
-                title = "领土系统数据 - 分布统计",
-                lines = lines,
-                warnings = warnings
-            )
         }
     }
 
@@ -550,44 +571,53 @@ object DebugVisualizationManager {
             )
         }
 
-        return CompletableFuture.supplyAsync {
-            val lines = mutableListOf<String>()
-            lines += DebugVisualizationFormatter.summaryLine("§e总国家数", "§f${countries.size}")
-            lines += ""
-            lines += DebugVisualizationFormatter.section("税收状态 (最多显示50条)")
+        // 🔧 修复问题2 (Medium): 使用Folia管理的asyncScheduler替代ForkJoinPool
+        return CompletableFuture<DebugVisualizationFrame>().apply {
+            async { _ ->
+                try {
+                    val lines = mutableListOf<String>()
+                    lines += DebugVisualizationFormatter.summaryLine("§e总国家数", "§f${countries.size}")
+                    lines += ""
+                    lines += DebugVisualizationFormatter.section("税收状态 (最多显示50条)")
 
-            val sorted = countries.sortedWith(
-                compareByDescending<EconomyTaxSnapshot> { it.goldPerHour + it.diamondPerHour * 10 }
-                    .thenBy { it.name }
-            )
+                    val sorted = countries.sortedWith(
+                        compareByDescending<EconomyTaxSnapshot> { it.goldPerHour + it.diamondPerHour * 10 }
+                            .thenBy { it.name }
+                    )
 
-            val warnings = mutableListOf<String>()
-            if (sorted.size > 50) {
-                warnings += "仅展示前50个国家，剩余 ${sorted.size - 50} 个已被省略。"
-            }
+                    val warnings = mutableListOf<String>()
+                    if (sorted.size > 50) {
+                        warnings += "仅展示前50个国家，剩余 ${sorted.size - 50} 个已被省略。"
+                    }
 
-            sorted.take(50).forEachIndexed { index, snapshot ->
-                lines += DebugVisualizationFormatter.bulletLine(index + 1, snapshot.name, DebugVisualizationFormatter.maskUuid(snapshot.id))
-                lines += DebugVisualizationFormatter.detailLine("   税率", "§f${snapshot.taxRate}%")
-                lines += DebugVisualizationFormatter.detailLine("   每小时收入", "§f金币×${snapshot.goldPerHour}, 钻石×${snapshot.diamondPerHour}")
+                    sorted.take(50).forEachIndexed { index, snapshot ->
+                        lines += DebugVisualizationFormatter.bulletLine(index + 1, snapshot.name, DebugVisualizationFormatter.maskUuid(snapshot.id))
+                        lines += DebugVisualizationFormatter.detailLine("   税率", "§f${snapshot.taxRate}%")
+                        lines += DebugVisualizationFormatter.detailLine("   每小时收入", "§f金币×${snapshot.goldPerHour}, 钻石×${snapshot.diamondPerHour}")
 
-                // 使用快照数据，避免重新查询可能已被删除的国家
-                val manualTaxStatus = if (snapshot.canCollectTax) {
-                    "§a可收税"
-                } else {
-                    val remaining = EconomyManager.TAX_CYCLE - (System.currentTimeMillis() - snapshot.lastManualTaxTime)
-                    "§c冷却中 (${formatDuration(remaining)})"
+                        // 使用快照数据，避免重新查询可能已被删除的国家
+                        val manualTaxStatus = if (snapshot.canCollectTax) {
+                            "§a可收税"
+                        } else {
+                            val remaining = EconomyManager.TAX_CYCLE - (System.currentTimeMillis() - snapshot.lastManualTaxTime)
+                            "§c冷却中 (${formatDuration(remaining)})"
+                        }
+                        lines += DebugVisualizationFormatter.detailLine("   手动收税", manualTaxStatus)
+                        lines += DebugVisualizationFormatter.detailLine("   上次手动收税", DebugVisualizationFormatter.formatTimestamp(snapshot.lastManualTaxTime))
+                        lines += DebugVisualizationFormatter.detailLine("   上次自动收税", DebugVisualizationFormatter.formatTimestamp(snapshot.lastAutoTaxTime))
+                    }
+
+                    complete(DebugVisualizationFrame(
+                        title = "经济系统数据 - 税收状态",
+                        lines = lines,
+                        warnings = warnings
+                    ))
+                } catch (e: Exception) {
+                    pluginLogger.severe("税收状态可视化处理失败: ${e.message}")
+                    e.printStackTrace()
+                    completeExceptionally(e)
                 }
-                lines += DebugVisualizationFormatter.detailLine("   手动收税", manualTaxStatus)
-                lines += DebugVisualizationFormatter.detailLine("   上次手动收税", DebugVisualizationFormatter.formatTimestamp(snapshot.lastManualTaxTime))
-                lines += DebugVisualizationFormatter.detailLine("   上次自动收税", DebugVisualizationFormatter.formatTimestamp(snapshot.lastAutoTaxTime))
             }
-
-            DebugVisualizationFrame(
-                title = "经济系统数据 - 税收状态",
-                lines = lines,
-                warnings = warnings
-            )
         }
     }
 
@@ -602,41 +632,50 @@ object DebugVisualizationManager {
             )
         }
 
-        return CompletableFuture.supplyAsync {
-            val lines = mutableListOf<String>()
-            val totalGold = countries.sumOf { it.gold }
-            val totalDiamond = countries.sumOf { it.diamond }
-            val totalEconomyPoints = countries.sumOf { it.economyPoints }
+        // 🔧 修复问题2 (Medium): 使用Folia管理的asyncScheduler替代ForkJoinPool
+        return CompletableFuture<DebugVisualizationFrame>().apply {
+            async { _ ->
+                try {
+                    val lines = mutableListOf<String>()
+                    val totalGold = countries.sumOf { it.gold }
+                    val totalDiamond = countries.sumOf { it.diamond }
+                    val totalEconomyPoints = countries.sumOf { it.economyPoints }
 
-            lines += DebugVisualizationFormatter.summaryLine("§e总国家数", "§f${countries.size}")
-            lines += DebugVisualizationFormatter.summaryLine("§e总金币", "§f$totalGold")
-            lines += DebugVisualizationFormatter.summaryLine("§e总钻石", "§f$totalDiamond")
-            lines += DebugVisualizationFormatter.summaryLine("§e总经济点数", "§f$totalEconomyPoints")
-            lines += ""
-            lines += DebugVisualizationFormatter.section("国库资源 (最多显示50条)")
+                    lines += DebugVisualizationFormatter.summaryLine("§e总国家数", "§f${countries.size}")
+                    lines += DebugVisualizationFormatter.summaryLine("§e总金币", "§f$totalGold")
+                    lines += DebugVisualizationFormatter.summaryLine("§e总钻石", "§f$totalDiamond")
+                    lines += DebugVisualizationFormatter.summaryLine("§e总经济点数", "§f$totalEconomyPoints")
+                    lines += ""
+                    lines += DebugVisualizationFormatter.section("国库资源 (最多显示50条)")
 
-            val sorted = countries.sortedWith(
-                compareByDescending<EconomyTreasurySnapshot> { it.gold + it.diamond * 10 + it.economyPoints }
-                    .thenBy { it.name }
-            )
+                    val sorted = countries.sortedWith(
+                        compareByDescending<EconomyTreasurySnapshot> { it.gold + it.diamond * 10 + it.economyPoints }
+                            .thenBy { it.name }
+                    )
 
-            val warnings = mutableListOf<String>()
-            if (sorted.size > 50) {
-                warnings += "仅展示前50个国家，剩余 ${sorted.size - 50} 个已被省略。"
+                    val warnings = mutableListOf<String>()
+                    if (sorted.size > 50) {
+                        warnings += "仅展示前50个国家，剩余 ${sorted.size - 50} 个已被省略。"
+                    }
+
+                    sorted.take(50).forEachIndexed { index, snapshot ->
+                        lines += DebugVisualizationFormatter.bulletLine(index + 1, snapshot.name, DebugVisualizationFormatter.maskUuid(snapshot.id))
+                        lines += DebugVisualizationFormatter.detailLine("   金币", "§f${snapshot.gold}")
+                        lines += DebugVisualizationFormatter.detailLine("   钻石", "§f${snapshot.diamond}")
+                        lines += DebugVisualizationFormatter.detailLine("   经济点数", "§f${snapshot.economyPoints}")
+                    }
+
+                    complete(DebugVisualizationFrame(
+                        title = "经济系统数据 - 国库资源",
+                        lines = lines,
+                        warnings = warnings
+                    ))
+                } catch (e: Exception) {
+                    pluginLogger.severe("国库资源可视化处理失败: ${e.message}")
+                    e.printStackTrace()
+                    completeExceptionally(e)
+                }
             }
-
-            sorted.take(50).forEachIndexed { index, snapshot ->
-                lines += DebugVisualizationFormatter.bulletLine(index + 1, snapshot.name, DebugVisualizationFormatter.maskUuid(snapshot.id))
-                lines += DebugVisualizationFormatter.detailLine("   金币", "§f${snapshot.gold}")
-                lines += DebugVisualizationFormatter.detailLine("   钻石", "§f${snapshot.diamond}")
-                lines += DebugVisualizationFormatter.detailLine("   经济点数", "§f${snapshot.economyPoints}")
-            }
-
-            DebugVisualizationFrame(
-                title = "经济系统数据 - 国库资源",
-                lines = lines,
-                warnings = warnings
-            )
         }
     }
 
@@ -662,112 +701,128 @@ object DebugVisualizationManager {
     private fun handleWarStatus(request: DebugVisualizationRequest): CompletableFuture<DebugVisualizationFrame> {
         val activeWars = WarManager.getAllActiveWars()
 
-        return CompletableFuture.supplyAsync {
-            val lines = mutableListOf<String>()
-            lines += DebugVisualizationFormatter.summaryLine("§e活跃战争数", "§f${activeWars.size}")
-            lines += ""
+        // 🔧 修复问题2 (Medium): 使用Folia管理的asyncScheduler替代ForkJoinPool
+        return CompletableFuture<DebugVisualizationFrame>().apply {
+            async { _ ->
+                try {
+                    val lines = mutableListOf<String>()
+                    lines += DebugVisualizationFormatter.summaryLine("§e活跃战争数", "§f${activeWars.size}")
+                    lines += ""
 
-            if (activeWars.isEmpty()) {
-                lines += DebugVisualizationFormatter.section("当前无活跃战争")
-            } else {
-                lines += DebugVisualizationFormatter.section("活跃战争列表")
-
-                activeWars.entries.forEachIndexed { index, (warId, pair) ->
-                    val (country1, country2) = pair
-                    val duration = WarManager.getWarDuration(country1, country2)
-                    val scoreResult = WarScoreBossBarManager.getWarScoreResult(country1, country2)
-
-                    lines += DebugVisualizationFormatter.bulletLine(index + 1, "${country1.name} vs ${country2.name}", warId)
-                    lines += DebugVisualizationFormatter.detailLine("   持续时间", formatDuration(duration))
-
-                    if (scoreResult != null) {
-                        lines += DebugVisualizationFormatter.detailLine("   积分", "§f${scoreResult.score1} : ${scoreResult.score2}")
-                        val leader = when {
-                            scoreResult.score1 > scoreResult.score2 -> "§a${country1.name} 领先"
-                            scoreResult.score2 > scoreResult.score1 -> "§a${country2.name} 领先"
-                            else -> "§e平局"
-                        }
-                        lines += DebugVisualizationFormatter.detailLine("   状态", leader)
+                    if (activeWars.isEmpty()) {
+                        lines += DebugVisualizationFormatter.section("当前无活跃战争")
                     } else {
-                        lines += DebugVisualizationFormatter.detailLine("   积分", "§7未启用积分系统")
+                        lines += DebugVisualizationFormatter.section("活跃战争列表")
+
+                        activeWars.entries.forEachIndexed { index, (warId, pair) ->
+                            val (country1, country2) = pair
+                            val duration = WarManager.getWarDuration(country1, country2)
+                            val scoreResult = WarScoreBossBarManager.getWarScoreResult(country1, country2)
+
+                            lines += DebugVisualizationFormatter.bulletLine(index + 1, "${country1.name} vs ${country2.name}", warId)
+                            lines += DebugVisualizationFormatter.detailLine("   持续时间", formatDuration(duration))
+
+                            if (scoreResult != null) {
+                                lines += DebugVisualizationFormatter.detailLine("   积分", "§f${scoreResult.score1} : ${scoreResult.score2}")
+                                val leader = when {
+                                    scoreResult.score1 > scoreResult.score2 -> "§a${country1.name} 领先"
+                                    scoreResult.score2 > scoreResult.score1 -> "§a${country2.name} 领先"
+                                    else -> "§e平局"
+                                }
+                                lines += DebugVisualizationFormatter.detailLine("   状态", leader)
+                            } else {
+                                lines += DebugVisualizationFormatter.detailLine("   积分", "§7未启用积分系统")
+                            }
+                        }
                     }
+
+                    complete(DebugVisualizationFrame(
+                        title = "战争系统数据 - 实时状态",
+                        lines = lines,
+                        warnings = emptyList()
+                    ))
+                } catch (e: Exception) {
+                    pluginLogger.severe("战争状态可视化处理失败: ${e.message}")
+                    e.printStackTrace()
+                    completeExceptionally(e)
                 }
             }
-
-            DebugVisualizationFrame(
-                title = "战争系统数据 - 实时状态",
-                lines = lines,
-                warnings = emptyList()
-            )
         }
     }
 
     private fun handleTechnologyProgress(request: DebugVisualizationRequest): CompletableFuture<DebugVisualizationFrame> {
-        val countries = CountryManager.countries.values.toList()
-
-        return CompletableFuture.supplyAsync {
-            val lines = mutableListOf<String>()
-            var totalResearching = 0
-            val researchingCountries = mutableListOf<TechnologyProgressSnapshot>()
-
-            for (country in countries) {
-                val researchingTechs = TechnologyManager.getResearchingTechnologies(country)
-                if (researchingTechs.isNotEmpty()) {
-                    totalResearching += researchingTechs.size
-                    researchingCountries.add(TechnologyProgressSnapshot(
-                        countryId = country.id,
-                        countryName = country.name,
-                        researchingTechs = researchingTechs.mapNotNull { techId ->
-                            val countryTech = TechnologyManager.getCountryTechnology(country, techId)
-                            val technology = TechnologyManager.getTechnology(techId)
-                            if (countryTech != null && technology != null) {
-                                TechResearchInfo(
-                                    techId = techId,
-                                    techName = technology.name,
-                                    startTime = countryTech.researchStartTime ?: 0L,
-                                    endTime = countryTech.researchEndTime ?: 0L,
-                                    currentLevel = countryTech.level,
-                                    targetLevel = countryTech.level + 1
-                                )
-                            } else null
-                        }
-                    ))
-                }
-            }
-
-            lines += DebugVisualizationFormatter.summaryLine("§e总国家数", "§f${countries.size}")
-            lines += DebugVisualizationFormatter.summaryLine("§e正在研究科技的国家", "§f${researchingCountries.size}")
-            lines += DebugVisualizationFormatter.summaryLine("§e正在研究的科技总数", "§f$totalResearching")
-            lines += ""
-
-            if (researchingCountries.isEmpty()) {
-                lines += DebugVisualizationFormatter.section("当前无国家正在研究科技")
-            } else {
-                lines += DebugVisualizationFormatter.section("科技研究进度")
-
-                researchingCountries.forEachIndexed { index, snapshot ->
-                    lines += DebugVisualizationFormatter.bulletLine(index + 1, snapshot.countryName, DebugVisualizationFormatter.maskUuid(snapshot.countryId))
-
-                    snapshot.researchingTechs.forEach { techInfo ->
-                        val currentTime = System.currentTimeMillis()
-                        val totalDuration = techInfo.endTime - techInfo.startTime
-                        val elapsed = currentTime - techInfo.startTime
-                        val remaining = techInfo.endTime - currentTime
-                        val progress = if (totalDuration > 0) {
-                            ((elapsed.toDouble() / totalDuration) * 100).toInt().coerceIn(0, 100)
-                        } else 0
-
-                        lines += DebugVisualizationFormatter.detailLine("   科技", "§f${techInfo.techName} (Lv.${techInfo.currentLevel} → Lv.${techInfo.targetLevel})")
-                        lines += DebugVisualizationFormatter.detailLine("   进度", "§f$progress% (剩余 ${formatDuration(remaining)})")
+        // 🔧 修复问题1 (High): 在主线程创建不可变快照，避免异步线程访问可变Country对象
+        val totalCountries = CountryManager.countries.size
+        val researchingCountries = CountryManager.countries.values.mapNotNull { country ->
+            val researchingTechs = TechnologyManager.getResearchingTechnologies(country)
+            if (researchingTechs.isNotEmpty()) {
+                TechnologyProgressSnapshot(
+                    countryId = country.id,
+                    countryName = country.name,
+                    researchingTechs = researchingTechs.mapNotNull { techId ->
+                        val countryTech = TechnologyManager.getCountryTechnology(country, techId)
+                        val technology = TechnologyManager.getTechnology(techId)
+                        if (countryTech != null && technology != null) {
+                            TechResearchInfo(
+                                techId = techId,
+                                techName = technology.name,
+                                startTime = countryTech.researchStartTime ?: 0L,
+                                endTime = countryTech.researchEndTime ?: 0L,
+                                currentLevel = countryTech.level,
+                                targetLevel = countryTech.level + 1
+                            )
+                        } else null
                     }
+                )
+            } else null
+        }
+
+        // 🔧 修复问题2 (Medium): 使用Folia管理的asyncScheduler替代ForkJoinPool
+        return CompletableFuture<DebugVisualizationFrame>().apply {
+            async { _ ->
+                try {
+                    val lines = mutableListOf<String>()
+                    val totalResearching = researchingCountries.sumOf { it.researchingTechs.size }
+
+                    lines += DebugVisualizationFormatter.summaryLine("§e总国家数", "§f$totalCountries")
+                    lines += DebugVisualizationFormatter.summaryLine("§e正在研究科技的国家", "§f${researchingCountries.size}")
+                    lines += DebugVisualizationFormatter.summaryLine("§e正在研究的科技总数", "§f$totalResearching")
+                    lines += ""
+
+                    if (researchingCountries.isEmpty()) {
+                        lines += DebugVisualizationFormatter.section("当前无国家正在研究科技")
+                    } else {
+                        lines += DebugVisualizationFormatter.section("科技研究进度")
+
+                        researchingCountries.forEachIndexed { index, snapshot ->
+                            lines += DebugVisualizationFormatter.bulletLine(index + 1, snapshot.countryName, DebugVisualizationFormatter.maskUuid(snapshot.countryId))
+
+                            snapshot.researchingTechs.forEach { techInfo ->
+                                val currentTime = System.currentTimeMillis()
+                                val totalDuration = techInfo.endTime - techInfo.startTime
+                                val elapsed = currentTime - techInfo.startTime
+                                val remaining = techInfo.endTime - currentTime
+                                val progress = if (totalDuration > 0) {
+                                    ((elapsed.toDouble() / totalDuration) * 100).toInt().coerceIn(0, 100)
+                                } else 0
+
+                                lines += DebugVisualizationFormatter.detailLine("   科技", "§f${techInfo.techName} (Lv.${techInfo.currentLevel} → Lv.${techInfo.targetLevel})")
+                                lines += DebugVisualizationFormatter.detailLine("   进度", "§f$progress% (剩余 ${formatDuration(remaining)})")
+                            }
+                        }
+                    }
+
+                    complete(DebugVisualizationFrame(
+                        title = "科技系统数据 - 研究进度",
+                        lines = lines,
+                        warnings = emptyList()
+                    ))
+                } catch (e: Exception) {
+                    pluginLogger.severe("科技进度可视化处理失败: ${e.message}")
+                    e.printStackTrace()
+                    completeExceptionally(e)
                 }
             }
-
-            DebugVisualizationFrame(
-                title = "科技系统数据 - 研究进度",
-                lines = lines,
-                warnings = emptyList()
-            )
         }
     }
 
@@ -787,122 +842,143 @@ object DebugVisualizationManager {
     )
 
     private fun handleProfessionOverview(request: DebugVisualizationRequest): CompletableFuture<DebugVisualizationFrame> {
-        val users = UserManager.users.values.toList()
-
-        return CompletableFuture.supplyAsync {
-            val lines = mutableListOf<String>()
-            val professionCounts = mutableMapOf<String, Int>()
-            val professionLevelCounts = mutableMapOf<String, MutableMap<Int, Int>>()
-            var noProfessionCount = 0
-
-            for (user in users) {
-                if (user.profession == null) {
-                    noProfessionCount++
-                } else {
-                    val professionName = ProfessionManager.getProfessionName(user.profession!!)
-                    professionCounts[professionName] = (professionCounts[professionName] ?: 0) + 1
-
-                    val levelMap = professionLevelCounts.getOrPut(professionName) { mutableMapOf() }
-                    levelMap[user.professionLevel] = (levelMap[user.professionLevel] ?: 0) + 1
-                }
-            }
-
-            lines += DebugVisualizationFormatter.summaryLine("§e总玩家数", "§f${users.size}")
-            lines += DebugVisualizationFormatter.summaryLine("§e无职业玩家", "§f$noProfessionCount")
-            lines += DebugVisualizationFormatter.summaryLine("§e有职业玩家", "§f${users.size - noProfessionCount}")
-            lines += ""
-            lines += DebugVisualizationFormatter.section("职业分布统计")
-
-            professionCounts.entries.sortedByDescending { it.value }.forEach { (professionName, count) ->
-                lines += DebugVisualizationFormatter.bulletLine(0, professionName, null)
-                lines += DebugVisualizationFormatter.detailLine("   总人数", "§f$count")
-
-                val levelMap = professionLevelCounts[professionName] ?: emptyMap()
-                levelMap.entries.sortedBy { it.key }.forEach { (level, levelCount) ->
-                    lines += DebugVisualizationFormatter.detailLine("   Lv.$level", "§f$levelCount 人")
-                }
-            }
-
-            DebugVisualizationFrame(
-                title = "职业系统数据 - 分布统计",
-                lines = lines,
-                warnings = emptyList()
+        // 🔧 修复问题1 (High): 在主线程创建不可变快照，避免异步线程访问可变User对象
+        val userSnapshots = UserManager.users.values.map { user ->
+            ProfessionUserSnapshot(
+                profession = user.profession,
+                professionLevel = user.professionLevel
             )
+        }
+
+        // 🔧 修复问题2 (Medium): 使用Folia管理的asyncScheduler替代ForkJoinPool
+        return CompletableFuture<DebugVisualizationFrame>().apply {
+            async { _ ->
+                try {
+                    val lines = mutableListOf<String>()
+                    val professionCounts = mutableMapOf<String, Int>()
+                    val professionLevelCounts = mutableMapOf<String, MutableMap<Int, Int>>()
+                    var noProfessionCount = 0
+
+                    for (snapshot in userSnapshots) {
+                        if (snapshot.profession == null) {
+                            noProfessionCount++
+                        } else {
+                            val professionName = ProfessionManager.getProfessionName(snapshot.profession!!)
+                            professionCounts[professionName] = (professionCounts[professionName] ?: 0) + 1
+
+                            val levelMap = professionLevelCounts.getOrPut(professionName) { mutableMapOf() }
+                            levelMap[snapshot.professionLevel] = (levelMap[snapshot.professionLevel] ?: 0) + 1
+                        }
+                    }
+
+                    lines += DebugVisualizationFormatter.summaryLine("§e总玩家数", "§f${userSnapshots.size}")
+                    lines += DebugVisualizationFormatter.summaryLine("§e无职业玩家", "§f$noProfessionCount")
+                    lines += DebugVisualizationFormatter.summaryLine("§e有职业玩家", "§f${userSnapshots.size - noProfessionCount}")
+                    lines += ""
+                    lines += DebugVisualizationFormatter.section("职业分布统计")
+
+                    professionCounts.entries.sortedByDescending { it.value }.forEach { (professionName, count) ->
+                        lines += DebugVisualizationFormatter.bulletLine(0, professionName, null)
+                        lines += DebugVisualizationFormatter.detailLine("   总人数", "§f$count")
+
+                        val levelMap = professionLevelCounts[professionName] ?: emptyMap()
+                        levelMap.entries.sortedBy { it.key }.forEach { (level, levelCount) ->
+                            lines += DebugVisualizationFormatter.detailLine("   Lv.$level", "§f$levelCount 人")
+                        }
+                    }
+
+                    complete(DebugVisualizationFrame(
+                        title = "职业系统数据 - 分布统计",
+                        lines = lines,
+                        warnings = emptyList()
+                    ))
+                } catch (e: Exception) {
+                    pluginLogger.severe("职业分布可视化处理失败: ${e.message}")
+                    e.printStackTrace()
+                    completeExceptionally(e)
+                }
+            }
         }
     }
 
+    private data class ProfessionUserSnapshot(
+        val profession: Profession?,
+        val professionLevel: Int
+    )
+
     private fun handleShieldStatus(request: DebugVisualizationRequest): CompletableFuture<DebugVisualizationFrame> {
-        val countries = CountryManager.countries.values.toList()
+        // 🔧 修复问题1 (High): 在主线程创建不可变快照，避免异步线程访问可变Country对象
+        val totalCountries = CountryManager.countries.size
+        val shieldSnapshots = CountryManager.countries.values.mapNotNull { country ->
+            val isActive = ShieldManager.isShieldActive(country)
+            val remainingTime = ShieldManager.getShieldRemainingTime(country)
+            val cooldownEnd = country.shieldCooldownEnd ?: 0L
+            val memberCount = CountryManager.getCountryMembers(country.id).size
 
-        return CompletableFuture.supplyAsync {
-            val lines = mutableListOf<String>()
-            val activeShields = mutableListOf<ShieldStatusSnapshot>()
-            val cooldownShields = mutableListOf<ShieldStatusSnapshot>()
+            // 只保存有护盾状态的国家（激活中或冷却中）
+            if (isActive || cooldownEnd > System.currentTimeMillis()) {
+                ShieldStatusSnapshot(
+                    countryId = country.id,
+                    countryName = country.name,
+                    isActive = isActive,
+                    remainingTime = remainingTime,
+                    cooldownEnd = cooldownEnd,
+                    memberCount = memberCount
+                )
+            } else null
+        }
 
-            for (country in countries) {
-                val isActive = ShieldManager.isShieldActive(country)
-                val remainingTime = ShieldManager.getShieldRemainingTime(country)
-                val cooldownEnd = country.shieldCooldownEnd ?: 0L
-                val memberCount = CountryManager.getCountryMembers(country.id).size
+        // 🔧 修复问题2 (Medium): 使用Folia管理的asyncScheduler替代ForkJoinPool
+        return CompletableFuture<DebugVisualizationFrame>().apply {
+            async { _ ->
+                try {
+                    val lines = mutableListOf<String>()
+                    val activeShields = shieldSnapshots.filter { it.isActive }
+                    val cooldownShields = shieldSnapshots.filter { !it.isActive }
 
-                if (isActive) {
-                    activeShields.add(ShieldStatusSnapshot(
-                        countryId = country.id,
-                        countryName = country.name,
-                        isActive = true,
-                        remainingTime = remainingTime,
-                        cooldownEnd = cooldownEnd,
-                        memberCount = memberCount
+                    lines += DebugVisualizationFormatter.summaryLine("§e总国家数", "§f$totalCountries")
+                    lines += DebugVisualizationFormatter.summaryLine("§e激活护盾的国家", "§f${activeShields.size}")
+                    lines += DebugVisualizationFormatter.summaryLine("§e冷却中的国家", "§f${cooldownShields.size}")
+                    lines += ""
+
+                    if (activeShields.isNotEmpty()) {
+                        lines += DebugVisualizationFormatter.section("激活中的护盾")
+                        activeShields.sortedByDescending { it.remainingTime }.forEachIndexed { index, snapshot ->
+                            lines += DebugVisualizationFormatter.bulletLine(index + 1, snapshot.countryName, DebugVisualizationFormatter.maskUuid(snapshot.countryId))
+                            lines += DebugVisualizationFormatter.detailLine("   剩余时间", formatDuration(snapshot.remainingTime))
+                            lines += DebugVisualizationFormatter.detailLine("   成员数量", "§f${snapshot.memberCount} 人")
+                        }
+                        lines += ""
+                    }
+
+                    if (cooldownShields.isNotEmpty()) {
+                        lines += DebugVisualizationFormatter.section("冷却中的护盾")
+                        cooldownShields.sortedBy { it.cooldownEnd }.take(20).forEachIndexed { index, snapshot ->
+                            val cooldownRemaining = snapshot.cooldownEnd - System.currentTimeMillis()
+                            lines += DebugVisualizationFormatter.bulletLine(index + 1, snapshot.countryName, DebugVisualizationFormatter.maskUuid(snapshot.countryId))
+                            lines += DebugVisualizationFormatter.detailLine("   冷却剩余", formatDuration(cooldownRemaining))
+                        }
+
+                        if (cooldownShields.size > 20) {
+                            lines += DebugVisualizationFormatter.warn("仅展示前20个冷却中的国家，剩余 ${cooldownShields.size - 20} 个已省略。")
+                        }
+                    }
+
+                    if (activeShields.isEmpty() && cooldownShields.isEmpty()) {
+                        lines += DebugVisualizationFormatter.section("当前无国家使用护盾")
+                    }
+
+                    complete(DebugVisualizationFrame(
+                        title = "护盾系统数据 - 状态一览",
+                        lines = lines,
+                        warnings = emptyList()
                     ))
-                } else if (cooldownEnd > System.currentTimeMillis()) {
-                    cooldownShields.add(ShieldStatusSnapshot(
-                        countryId = country.id,
-                        countryName = country.name,
-                        isActive = false,
-                        remainingTime = 0L,
-                        cooldownEnd = cooldownEnd,
-                        memberCount = memberCount
-                    ))
+                } catch (e: Exception) {
+                    pluginLogger.severe("护盾状态可视化处理失败: ${e.message}")
+                    e.printStackTrace()
+                    completeExceptionally(e)
                 }
             }
-
-            lines += DebugVisualizationFormatter.summaryLine("§e总国家数", "§f${countries.size}")
-            lines += DebugVisualizationFormatter.summaryLine("§e激活护盾的国家", "§f${activeShields.size}")
-            lines += DebugVisualizationFormatter.summaryLine("§e冷却中的国家", "§f${cooldownShields.size}")
-            lines += ""
-
-            if (activeShields.isNotEmpty()) {
-                lines += DebugVisualizationFormatter.section("激活中的护盾")
-                activeShields.sortedByDescending { it.remainingTime }.forEachIndexed { index, snapshot ->
-                    lines += DebugVisualizationFormatter.bulletLine(index + 1, snapshot.countryName, DebugVisualizationFormatter.maskUuid(snapshot.countryId))
-                    lines += DebugVisualizationFormatter.detailLine("   剩余时间", formatDuration(snapshot.remainingTime))
-                    lines += DebugVisualizationFormatter.detailLine("   成员数量", "§f${snapshot.memberCount} 人")
-                }
-                lines += ""
-            }
-
-            if (cooldownShields.isNotEmpty()) {
-                lines += DebugVisualizationFormatter.section("冷却中的护盾")
-                cooldownShields.sortedBy { it.cooldownEnd }.take(20).forEachIndexed { index, snapshot ->
-                    val cooldownRemaining = snapshot.cooldownEnd - System.currentTimeMillis()
-                    lines += DebugVisualizationFormatter.bulletLine(index + 1, snapshot.countryName, DebugVisualizationFormatter.maskUuid(snapshot.countryId))
-                    lines += DebugVisualizationFormatter.detailLine("   冷却剩余", formatDuration(cooldownRemaining))
-                }
-
-                if (cooldownShields.size > 20) {
-                    lines += DebugVisualizationFormatter.warn("仅展示前20个冷却中的国家，剩余 ${cooldownShields.size - 20} 个已省略。")
-                }
-            }
-
-            if (activeShields.isEmpty() && cooldownShields.isEmpty()) {
-                lines += DebugVisualizationFormatter.section("当前无国家使用护盾")
-            }
-
-            DebugVisualizationFrame(
-                title = "护盾系统数据 - 状态一览",
-                lines = lines,
-                warnings = emptyList()
-            )
         }
     }
 
@@ -920,54 +996,63 @@ object DebugVisualizationManager {
         val onlinePlayersSnapshot = Bukkit.getOnlinePlayers().size
         val maxPlayersSnapshot = Bukkit.getMaxPlayers()
 
-        return CompletableFuture.supplyAsync {
-            val lines = mutableListOf<String>()
+        // 🔧 修复问题2 (Medium): 使用Folia管理的asyncScheduler替代ForkJoinPool
+        return CompletableFuture<DebugVisualizationFrame>().apply {
+            async { _ ->
+                try {
+                    val lines = mutableListOf<String>()
 
-            // 异步任务队列状态
-            val pendingAsyncTasks = DataManager.getPendingAsyncTaskCount()
-            lines += DebugVisualizationFormatter.section("异步任务队列")
-            lines += DebugVisualizationFormatter.detailLine("   待处理任务数", "§f$pendingAsyncTasks")
-            lines += ""
+                    // 异步任务队列状态
+                    val pendingAsyncTasks = DataManager.getPendingAsyncTaskCount()
+                    lines += DebugVisualizationFormatter.section("异步任务队列")
+                    lines += DebugVisualizationFormatter.detailLine("   待处理任务数", "§f$pendingAsyncTasks")
+                    lines += ""
 
-            // 缓存大小统计
-            lines += DebugVisualizationFormatter.section("缓存状态")
-            lines += DebugVisualizationFormatter.detailLine("   国家缓存", "§f${CountryManager.countries.size} 条")
-            lines += DebugVisualizationFormatter.detailLine("   领土缓存", "§f${TerritoryManager.territories.size} 条")
-            lines += DebugVisualizationFormatter.detailLine("   用户缓存", "§f${UserManager.users.size} 条")
-            lines += ""
+                    // 缓存大小统计
+                    lines += DebugVisualizationFormatter.section("缓存状态")
+                    lines += DebugVisualizationFormatter.detailLine("   国家缓存", "§f${CountryManager.countries.size} 条")
+                    lines += DebugVisualizationFormatter.detailLine("   领土缓存", "§f${TerritoryManager.territories.size} 条")
+                    lines += DebugVisualizationFormatter.detailLine("   用户缓存", "§f${UserManager.users.size} 条")
+                    lines += ""
 
-            // 在线玩家统计（使用快照数据）
-            lines += DebugVisualizationFormatter.section("服务器状态")
-            lines += DebugVisualizationFormatter.detailLine("   在线玩家", "§f$onlinePlayersSnapshot 人")
-            lines += DebugVisualizationFormatter.detailLine("   最大玩家数", "§f$maxPlayersSnapshot 人")
-            lines += ""
+                    // 在线玩家统计（使用快照数据）
+                    lines += DebugVisualizationFormatter.section("服务器状态")
+                    lines += DebugVisualizationFormatter.detailLine("   在线玩家", "§f$onlinePlayersSnapshot 人")
+                    lines += DebugVisualizationFormatter.detailLine("   最大玩家数", "§f$maxPlayersSnapshot 人")
+                    lines += ""
 
-            // 内存使用情况
-            val runtime = Runtime.getRuntime()
-            val maxMemory = runtime.maxMemory() / 1024 / 1024
-            val totalMemory = runtime.totalMemory() / 1024 / 1024
-            val freeMemory = runtime.freeMemory() / 1024 / 1024
-            val usedMemory = totalMemory - freeMemory
-            val usagePercent = (usedMemory.toDouble() / maxMemory * 100).toInt()
+                    // 内存使用情况
+                    val runtime = Runtime.getRuntime()
+                    val maxMemory = runtime.maxMemory() / 1024 / 1024
+                    val totalMemory = runtime.totalMemory() / 1024 / 1024
+                    val freeMemory = runtime.freeMemory() / 1024 / 1024
+                    val usedMemory = totalMemory - freeMemory
+                    val usagePercent = (usedMemory.toDouble() / maxMemory * 100).toInt()
 
-            lines += DebugVisualizationFormatter.section("内存使用")
-            lines += DebugVisualizationFormatter.detailLine("   已用内存", "§f${usedMemory}MB / ${maxMemory}MB (${usagePercent}%)")
-            lines += DebugVisualizationFormatter.detailLine("   可用内存", "§f${freeMemory}MB")
-            lines += DebugVisualizationFormatter.detailLine("   总分配内存", "§f${totalMemory}MB")
+                    lines += DebugVisualizationFormatter.section("内存使用")
+                    lines += DebugVisualizationFormatter.detailLine("   已用内存", "§f${usedMemory}MB / ${maxMemory}MB (${usagePercent}%)")
+                    lines += DebugVisualizationFormatter.detailLine("   可用内存", "§f${freeMemory}MB")
+                    lines += DebugVisualizationFormatter.detailLine("   总分配内存", "§f${totalMemory}MB")
 
-            val warnings = mutableListOf<String>()
-            if (usagePercent > 90) {
-                warnings += "内存使用率超过90%，建议检查内存泄漏或增加堆内存。"
+                    val warnings = mutableListOf<String>()
+                    if (usagePercent > 90) {
+                        warnings += "内存使用率超过90%，建议检查内存泄漏或增加堆内存。"
+                    }
+                    if (pendingAsyncTasks > 100) {
+                        warnings += "待处理异步任务数超过100，可能存在性能问题。"
+                    }
+
+                    complete(DebugVisualizationFrame(
+                        title = "运行时数据 - 数据库与缓存",
+                        lines = lines,
+                        warnings = warnings
+                    ))
+                } catch (e: Exception) {
+                    pluginLogger.severe("运行时状态可视化处理失败: ${e.message}")
+                    e.printStackTrace()
+                    completeExceptionally(e)
+                }
             }
-            if (pendingAsyncTasks > 100) {
-                warnings += "待处理异步任务数超过100，可能存在性能问题。"
-            }
-
-            DebugVisualizationFrame(
-                title = "运行时数据 - 数据库与缓存",
-                lines = lines,
-                warnings = warnings
-            )
         }
     }
 }

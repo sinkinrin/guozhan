@@ -79,37 +79,74 @@ object EconomyTasks {
     /**
      * 自动收税任务
      * 🔧 v1.3.23: 修复数据竞争问题 - 在异步线程中只计算，在主线程中修改Country对象
+     * 🔧 v1.3.52: 修复数据竞态 - 在主线程创建不可变快照，避免异步线程访问可变Country字段
      */
     private fun collectTaxes() {
         val plugin = Guozhan.instance
         val startTime = System.currentTimeMillis()
 
-        // 在异步线程执行计算操作（只读）
+        // 🔧 v1.3.52: 在主线程创建Country数据的不可变快照
+        data class CountryTaxSnapshot(
+            val id: UUID,
+            val name: String,
+            val taxRate: Int,
+            val accumulatedGoldTax: Double,
+            val accumulatedDiamondTax: Double
+        )
+
+        val countrySnapshots = CountryManager.countries.values.map { country ->
+            CountryTaxSnapshot(
+                id = country.id,
+                name = country.name,
+                taxRate = EconomyManager.getTaxRate(country),
+                accumulatedGoldTax = country.accumulatedGoldTax,
+                accumulatedDiamondTax = country.accumulatedDiamondTax
+            )
+        }
+
+        // 🔧 v1.3.52: 修复问题2 (High) - 在主线程快照在线玩家数据，避免异步线程调用Bukkit API
+        data class PlayerSnapshot(
+            val uuid: UUID,
+            val name: String,
+            val countryId: UUID?
+        )
+
+        val onlinePlayerSnapshots = Bukkit.getOnlinePlayers().mapNotNull { player ->
+            val user = player.user()
+            PlayerSnapshot(
+                uuid = player.uniqueId,
+                name = player.name,
+                countryId = user?.country?.id
+            )
+        }
+
+        // 在异步线程执行计算操作（只读快照数据）
         async { _ ->
             try {
                 plugin.logger.info("正在执行自动收税...")
-
-                // 获取所有国家（从缓存，无数据库操作）
-                val countries = CountryManager.countries.values.toList()
 
                 // 收集税收计算结果
                 val taxResults = mutableMapOf<UUID, Int>()
                 // 🔧 v1.3.50: 存储完整的税收计算结果用于应用累积
                 val taxCalculationResults = mutableMapOf<UUID, cn.lcofficial.guozhan.economy.TaxResult>()
 
-                for (country in countries) {
+                for (snapshot in countrySnapshots) {
                     // 跳过税率为0的国家
-                    if (EconomyManager.getTaxRate(country) <= 0) continue
+                    if (snapshot.taxRate <= 0) continue
+
+                    // 🔧 v1.3.52: 使用快照数据计算税收，避免访问可变Country对象
+                    // 从CountryManager获取Country对象用于计算（在主线程会重新获取）
+                    val country = CountryManager.getCountry(snapshot.id) ?: continue
 
                     // 🔧 v1.3.50: 修复每日自动税收从不累积小额国家的小数收入
                     // 始终调用calculateTaxWithAccumulation()并存储余数，不再基于taxAmount > 0判断
                     val taxResult = RegionalTaxSystem.calculateTaxWithAccumulation(country, 24.0) // 24小时
 
                     // 即使整数部分为0，也要记录结果以便累积小数部分
-                    taxResults[country.id] = taxResult.goldTax + (taxResult.diamondTax * 10)
+                    taxResults[snapshot.id] = taxResult.goldTax + (taxResult.diamondTax * 10)
 
                     // 存储完整的税收结果用于后续应用
-                    taxCalculationResults[country.id] = taxResult
+                    taxCalculationResults[snapshot.id] = taxResult
                 }
 
                 val duration = System.currentTimeMillis() - startTime
@@ -140,19 +177,16 @@ object EconomyTasks {
 
                     plugin.logger.info("自动收税完成，共收取 $totalCollected 金币，处理${taxCalculationResults.size} 个国家，通知 ${notifications.size} 个国家")
 
+                    // 🔧 v1.3.52: 修复问题2 (High) - 使用快照数据过滤在线成员，避免异步线程调用Bukkit API
                     // 通知在线成员
                     for ((countryId, taxAmount) in notifications) {
-                        val country = CountryManager.getCountry(countryId) ?: continue
-
-                        // 获取国家的所有在线成员
-                        val onlineMembers = Bukkit.getOnlinePlayers().filter { player ->
-                            val user = player.user()
-                            user?.country?.id == countryId
-                        }
+                        // 使用快照数据过滤该国家的在线成员
+                        val countryOnlineMembers = onlinePlayerSnapshots.filter { it.countryId == countryId }
 
                         // 🔧 v1.3.42: 修复税收通知违反Folia线程规则 - 使用EntityScheduler发送玩家消息
                         // 通知在线成员
-                        for (player in onlineMembers) {
+                        for (playerSnapshot in countryOnlineMembers) {
+                            val player = Bukkit.getPlayer(playerSnapshot.uuid) ?: continue
                             // 使用EntityScheduler确保在正确的线程中发送消息
                             player.scheduler.run(cn.lcofficial.guozhan.Guozhan.instance, { _ ->
                                 player.sendMessage("§6[国家税收] §a您的国家已自动收取税收 §f$taxAmount §a金币")
@@ -184,27 +218,40 @@ object EconomyTasks {
     /**
      * 资源生成任务
      * 🔧 v1.3.23: 修复数据竞争问题 - 在异步线程中只计算，在主线程中修改Country对象
+     * 🔧 v1.3.52: 修复数据竞态 - 在主线程创建不可变快照，避免异步线程访问可变TerritoryBlock字段
      */
     private fun generateResources() {
         val plugin = Guozhan.instance
         val startTime = System.currentTimeMillis()
 
-        // 在异步线程执行计算操作（只读）
+        // 🔧 v1.3.52: 在主线程创建TerritoryBlock数据的不可变快照
+        data class TerritorySnapshot(
+            val ownerId: UUID?,
+            val resourceType: ResourceType?
+        )
+
+        val territorySnapshots = TerritoryManager.territories.values.map { territory ->
+            TerritorySnapshot(
+                ownerId = territory.owner?.id,
+                resourceType = territory.resourceType
+            )
+        }
+
+        // 在异步线程执行计算操作（只读快照数据）
         async { _ ->
             try {
                 plugin.logger.info("正在生成资源...")
 
-                // 获取所有领土（从缓存，无数据库操作）
-                val territories = TerritoryManager.territories.values.toList()
-
-                // 按国家分组
-                val territoriesByCountry = territories.filter { it.isOwned() }.groupBy { it.owner!! }
+                // 按国家分组（使用快照数据）
+                val territoriesByCountry = territorySnapshots
+                    .filter { it.ownerId != null }
+                    .groupBy { it.ownerId!! }
 
                 // 收集资源生成结果
                 val resourceResults = mutableMapOf<UUID, Pair<Int, Int>>() // countryId -> (gold, diamond)
 
-                for ((country, countryTerritories) in territoriesByCountry) {
-                    // 计算每种资源的领土数量
+                for ((countryId, countryTerritories) in territoriesByCountry) {
+                    // 计算每种资源的领土数量（使用快照数据）
                     val resourceCounts = countryTerritories.groupBy { it.resourceType }.mapValues { it.value.size }
 
                     // 计算生成的资源
@@ -212,7 +259,7 @@ object EconomyTasks {
                     val diamondGenerated = (resourceCounts[ResourceType.DIAMOND] ?: 0) * 2 // 每个钻石领土生成2钻石
 
                     if (goldGenerated > 0 || diamondGenerated > 0) {
-                        resourceResults[country.id] = Pair(goldGenerated, diamondGenerated)
+                        resourceResults[countryId] = Pair(goldGenerated, diamondGenerated)
                     }
                 }
 

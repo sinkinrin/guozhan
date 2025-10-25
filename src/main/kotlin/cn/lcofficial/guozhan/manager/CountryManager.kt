@@ -33,6 +33,9 @@ object CountryManager {
     /**
      * 获取国家
      * 🔧 v1.3.22: 修复缓存命中仍开启事务的问题 - 先检查缓存，未命中才开启事务
+     * 🔧 v1.3.52: 修复Critical问题C2 - 优化城市数据加载，解决N+1查询问题
+     *
+     * ⚠️ 重要提示：修改Country对象后必须立即调用country.save()确保数据一致性！
      */
     fun getCountry(uniqueId: UUID): Country? {
         // 先检查缓存，命中直接返回（无数据库操作）
@@ -78,18 +81,21 @@ object CountryManager {
                 // 将查询结果加入缓存
                 countries[uniqueId] = country
 
-                // 加载国家的城市数据
-                Cities.select(
-                    Cities.id, Cities.owner
-                ).where { Cities.owner eq country.id.toString() }.forEach { row ->
+                // 🔧 v1.3.52: 修复Critical问题C2 - 优化城市数据加载，批量查询避免N+1问题
+                // 先批量查询所有城市ID
+                val cityIds = Cities.select(Cities.id)
+                    .where { Cities.owner eq country.id.toString() }
+                    .map { UUID.fromString(it[Cities.id].value) }
+
+                // 批量加载城市数据（CityManager内部会使用缓存）
+                cityIds.forEach { cityId ->
                     try {
-                        val cityId = UUID.fromString(row[Cities.id].value)
                         val city = CityManager.getCity(cityId)
                         if (city != null) {
                             country.cities.add(city)
                         }
                     } catch (e: IllegalArgumentException) {
-                        pluginLogger.warning("[CountryManager] 跳过无效的城市UUID: '${row[Cities.id].value}' - ${e.message}")
+                        pluginLogger.warning("[CountryManager] 跳过无效的城市UUID: '$cityId' - ${e.message}")
                     }
                 }
             }

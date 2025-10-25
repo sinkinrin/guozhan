@@ -342,19 +342,18 @@ object CoreManager {
         pluginLogger.info("国家 ${country.name} 的核心被玩家 ${destroyer.name} 摧毁")
 
         // 🔧 v1.3.35: 关键修复 - 删除被摧毁的国家，这会自动清理所有领土所有权
+        // 🔧 v1.3.54: 修复问题2 (High) - 在GlobalRegionScheduler中执行删除，避免异步线程调用Bukkit API
         try {
-            // 在异步线程中执行数据库操作，避免阻塞主线程
-            Bukkit.getAsyncScheduler().runNow(Guozhan.instance) { _ ->
+            // 在GlobalRegionScheduler中执行删除操作，确保Bukkit API调用在正确的线程
+            cn.lcofficial.guozhan.util.run { _ ->
                 try {
                     CountryManager.deleteCountry(country)
                     pluginLogger.info("[核心摧毁] 已删除国家 ${country.name}，所有领土现在可以被占领")
 
-                    // 通知所有在线玩家（使用 Folia 兼容的调度器）
-                    cn.lcofficial.guozhan.util.run { _ ->
-                        val message = "§a${country.name} 的所有领土现在可以被占领！"
-                        Bukkit.getOnlinePlayers().forEach { player ->
-                            player.sendMessage(message)
-                        }
+                    // 通知所有在线玩家
+                    val message = "§a${country.name} 的所有领土现在可以被占领！"
+                    Bukkit.getOnlinePlayers().forEach { player ->
+                        player.sendMessage(message)
                     }
                 } catch (e: Exception) {
                     pluginLogger.severe("[核心摧毁] 删除国家 ${country.name} 时出错: ${e.message}")
@@ -491,12 +490,14 @@ object CoreManager {
     /**
      * 异步更新BossBar的显示对象
      * 使用Folia的AsyncScheduler进行异步处理
+     * 🔧 v1.3.52: 修复问题3 (High) - 在主线程快照玩家数据，避免异步线程调用Bukkit API
      */
     private fun updateBossBarPlayersAsync(country: Country, attackerCountry: Country?, bossBar: BossBar) {
+        // 🔧 v1.3.52: 在主线程获取显示玩家列表，避免异步线程调用Bukkit.getPlayer()
+        val displayPlayers = getDisplayPlayers(country, attackerCountry)
+
         // 使用Folia的AsyncScheduler进行异步处理
         async { _ ->
-            val displayPlayers = getDisplayPlayers(country, attackerCountry)
-
             // 回到主线程更新 BossBar
             // 使用GlobalRegionScheduler执行主线程任务
             run { _ ->

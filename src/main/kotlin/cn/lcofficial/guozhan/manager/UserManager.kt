@@ -68,6 +68,7 @@ object UserManager {
      * 创建用户（先创建缓存对象，然后异步保存）
      * 🔧 v1.3.25: 避免在 region 线程中执行数据库操作
      * 🔧 v1.3.26: 添加防护措施，防止在预加载期间创建重复用户
+     * 🔧 v1.3.54: 修复问题1 (High) - 注册异步任务到DataManager，防止关闭时数据丢失
      */
     fun createUser(uniqueId: UUID, name: String): User {
         // 🔧 v1.3.26: 双重检查，防止并发创建
@@ -76,8 +77,8 @@ object UserManager {
         val user = User(uniqueId, name)
         users[uniqueId] = user
 
-        // 异步保存到数据库
-        cn.lcofficial.guozhan.util.async { _ ->
+        // 异步保存到数据库，并注册到DataManager
+        val future = java.util.concurrent.CompletableFuture.runAsync {
             try {
                 transaction {
                     // 检查数据库中是否已存在（防止重复插入）
@@ -106,7 +107,9 @@ object UserManager {
                     e.printStackTrace()
                 }
             }
-        }
+        }.thenApply { null as Void? } as java.util.concurrent.CompletableFuture<Void>
+
+        DataManager.registerAsyncTask(future)
 
         return user
     }

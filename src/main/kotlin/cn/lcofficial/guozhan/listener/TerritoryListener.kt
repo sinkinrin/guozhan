@@ -15,6 +15,7 @@ import cn.lcofficial.guozhan.manager.TerritoryManager
 import cn.lcofficial.guozhan.manager.TerritoryManager.territoryBlock
 import cn.lcofficial.guozhan.manager.UserManager.user
 import cn.lcofficial.guozhan.manager.WarManager
+import cn.lcofficial.guozhan.pluginLogger
 import cn.lcofficial.guozhan.util.hasEnoughItem
 import cn.lcofficial.guozhan.util.takeItem
 // 移除不存在的Scheduler导入，使用Folia调度器
@@ -33,7 +34,8 @@ object TerritoryListener : Listener {
 
     fun register() = Guozhan.instance.server.pluginManager.registerEvents(this, Guozhan.instance)
 
-    private val lastNotifyTime = mutableMapOf<Player, Long>()
+    // 🔧 v1.3.52: 修复High问题H1 - 使用ConcurrentHashMap确保线程安全
+    private val lastNotifyTime = java.util.concurrent.ConcurrentHashMap<Player, Long>()
     private val notifyCooldown = 3000L // 3秒冷却时间
     // Disallow high-risk grief blocks when siege bypass is active
     private val siegeRestrictedBlocks = setOf(
@@ -59,39 +61,39 @@ object TerritoryListener : Listener {
         val user = player.user()
         val territory = event.block.location.territoryBlock()
 
-        // 🔧 v1.3.34: 添加调试日志来追踪权限检查
+        // 🔧 v1.3.52: 修复Critical问题C1 - 移除调试日志污染，改用日志系统
         val blockLocation = event.block.location
         val chunkCoords = "(${blockLocation.chunk.x}, ${blockLocation.chunk.z})"
 
         if (territory == null) {
-            player.sendMessage("§7[调试] 无领土区块 $chunkCoords - 允许破坏")
+            pluginLogger.fine("[领土保护] 无领土区块 $chunkCoords - 允许破坏")
             return
         }
 
         if (!territory.isOwned()) {
-            player.sendMessage("§7[调试] 无主领土 $chunkCoords - 允许破坏")
+            pluginLogger.fine("[领土保护] 无主领土 $chunkCoords - 允许破坏")
             return
         }
 
         val ownerName = territory.owner?.name ?: "未知"
         val playerCountryName = user.country?.name ?: "无国家"
-        player.sendMessage("§7[调试] 有主领土 $chunkCoords - 所有者: $ownerName, 玩家国家: $playerCountryName")
+        pluginLogger.fine("[领土保护] 有主领土 $chunkCoords - 所有者: $ownerName, 玩家国家: $playerCountryName")
 
         // OP玩家有特殊权限，可以在任何地方破坏方块
         if (player.isOp) {
-            player.sendMessage("§7[调试] OP权限 - 允许破坏")
+            pluginLogger.fine("[领土保护] OP权限 - 允许破坏")
             return
         }
 
         if (canBypassCapitalProtection(user, territory)) {
-            player.sendMessage("§7[调试] 战时首都领土 - 允许破坏（配置开启）")
+            pluginLogger.fine("[领土保护] 战时首都领土 - 允许破坏（配置开启）")
             return
         }
 
         // 如果玩家不属于任何国家，或者不是领土所属国家的成员，取消事件
         if (user.country == null || user.country?.id != territory.owner?.id) {
             event.isCancelled = true
-            player.sendMessage("§7[调试] 权限检查失败 - 禁止破坏")
+            pluginLogger.fine("[领土保护] 权限检查失败 - 禁止破坏 (玩家: ${player.name}, 领土: $chunkCoords)")
             notifyPlayerIfNeeded(player, "§c你不能在其他国家的领土上破坏方块！")
             return
         }
@@ -100,12 +102,12 @@ object TerritoryListener : Listener {
         // 这样可以确保国家成员在正常情况下都能建造
         if (user.rank == Rank.DEFAULT && territory.loyalty < 20) {
             event.isCancelled = true
-            player.sendMessage("§7[调试] 忠诚度过低 (${territory.loyalty}%) - 禁止破坏")
+            pluginLogger.fine("[领土保护] 忠诚度过低 (${territory.loyalty}%) - 禁止破坏")
             notifyPlayerIfNeeded(player, "§c这块领土的忠诚度极低（${territory.loyalty}%），只有管理员或国家所有者才能在此操作！")
             return
         }
 
-        player.sendMessage("§7[调试] 权限检查通过 - 允许破坏")
+        pluginLogger.fine("[领土保护] 权限检查通过 - 允许破坏 (玩家: ${player.name}, 领土: $chunkCoords)")
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)

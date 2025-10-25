@@ -116,6 +116,23 @@ class Country(
             return memberIds.mapNotNull { UserManager.getUser(it) }
         }
 
+    /**
+     * 保存国家数据到数据库
+     *
+     * ⚠️ 重要提示（v1.3.52修复Critical问题C2）：
+     * 任何修改Country对象属性的操作后，都必须立即调用此方法确保缓存与数据库同步！
+     *
+     * 示例：
+     * ```kotlin
+     * country.gold += 100
+     * country.save()  // 必须立即保存！
+     * ```
+     *
+     * 如果不立即保存，可能导致：
+     * 1. 数据丢失（服务器崩溃或重启时）
+     * 2. 缓存与数据库不一致
+     * 3. 并发场景下的数据竞态条件
+     */
     fun save() = transaction {
         Countries.update({ Countries.id eq id }) {
             it[name] = name

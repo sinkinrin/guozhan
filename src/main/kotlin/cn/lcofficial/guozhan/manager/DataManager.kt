@@ -203,9 +203,12 @@ object DataManager {
     /**
      * 关闭数据库连接池
      * 🔧 v1.3.39: 修复数据库连接池清理缺失 - 插件卸载时调用
+     * 🔧 v1.3.52: 修复问题1 (High) - 关闭前等待所有异步操作完成，防止数据丢失
      */
     fun shutdown() {
         if (::dataSource.isInitialized && !dataSource.isClosed) {
+            // 等待所有异步保存操作完成
+            waitForAsyncOperations()
             dataSource.close()
             pluginLogger.info("数据库连接池已关闭")
         }

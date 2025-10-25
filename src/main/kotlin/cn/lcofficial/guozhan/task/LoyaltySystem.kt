@@ -25,11 +25,22 @@ class LoyaltySystem {
 
         // 每次减少的忠诚度百分比
         const val LOYALTY_DECAY_AMOUNT = 4
+
+        // 🔧 v1.3.52: 修复High问题H2 - 添加重试次数限制，防止内存泄漏
+        const val MAX_RETRY_COUNT = 3 // 最多重试3次
+        const val RETRY_TIMEOUT_MS = 30 * 60 * 1000L // 30分钟后放弃重试
     }
 
     // 🔧 v1.3.37: 新增批量保存机制 - 收集需要保存的领土，减少数据库写入频率
     // 🔧 v1.3.48: 修复High问题5 - 使用线程安全集合避免并发修改风险
     internal val pendingSaveTerritories = Collections.newSetFromMap(ConcurrentHashMap<TerritoryBlock, Boolean>())
+
+    // 🔧 v1.3.52: 修复High问题H2 - 跟踪失败领土的重试次数和首次失败时间
+    private data class RetryInfo(
+        val retryCount: Int = 0,
+        val firstFailureTime: Long = System.currentTimeMillis()
+    )
+    private val territoryRetryInfo = ConcurrentHashMap<TerritoryBlock, RetryInfo>()
 
     fun run() {
         val startTime = System.currentTimeMillis()
@@ -66,41 +77,72 @@ class LoyaltySystem {
                 }
             }
 
-            // 🔧 v1.3.49: 修复忠诚度批量保存丢失失败的领土 - 只移除成功保存的领土
+            // 🔧 v1.3.52: 修复High问题H2 - 添加重试限制和清理机制，防止内存泄漏
             if (pendingSaveTerritories.isNotEmpty()) {
                 val saveStartTime = System.currentTimeMillis()
                 val territoriesToSave = pendingSaveTerritories.toList() // 创建副本
                 val savedTerritories = mutableSetOf<TerritoryBlock>()
+                val abandonedTerritories = mutableSetOf<TerritoryBlock>()
                 var savedCount = 0
                 var failedCount = 0
+                var abandonedCount = 0
 
                 try {
-                    // 🔧 v1.3.49: 逐个保存领土，跟踪成功保存的领土
+                    // 🔧 v1.3.52: 逐个保存领土，跟踪成功保存的领土和需要放弃的领土
                     for (territory in territoriesToSave) {
+                        // 检查是否应该放弃重试
+                        val retryInfo = territoryRetryInfo[territory]
+                        if (retryInfo != null) {
+                            val shouldAbandon = retryInfo.retryCount >= MAX_RETRY_COUNT ||
+                                    (System.currentTimeMillis() - retryInfo.firstFailureTime) > RETRY_TIMEOUT_MS
+
+                            if (shouldAbandon) {
+                                abandonedTerritories.add(territory)
+                                abandonedCount++
+                                pluginLogger.warning("🔧 v1.3.52: 放弃保存领土 (${territory.x}, ${territory.z})，重试次数: ${retryInfo.retryCount}，首次失败时间: ${(System.currentTimeMillis() - retryInfo.firstFailureTime) / 1000}秒前")
+                                continue
+                            }
+                        }
+
                         try {
                             transaction {
                                 territory.saveInTransaction()
                             }
                             savedTerritories.add(territory)
                             savedCount++
+                            // 保存成功，清除重试信息
+                            territoryRetryInfo.remove(territory)
                         } catch (e: Exception) {
                             failedCount++
-                            pluginLogger.warning("保存领土 (${territory.x}, ${territory.z}) 失败，将在下次重试: ${e.message}")
+                            // 更新重试信息
+                            val currentRetryInfo = territoryRetryInfo[territory]
+                            if (currentRetryInfo == null) {
+                                territoryRetryInfo[territory] = RetryInfo(retryCount = 1)
+                                pluginLogger.warning("🔧 v1.3.52: 保存领土 (${territory.x}, ${territory.z}) 失败（第1次），将在下次重试: ${e.message}")
+                            } else {
+                                territoryRetryInfo[territory] = currentRetryInfo.copy(retryCount = currentRetryInfo.retryCount + 1)
+                                pluginLogger.warning("🔧 v1.3.52: 保存领土 (${territory.x}, ${territory.z}) 失败（第${currentRetryInfo.retryCount + 1}次），将在下次重试: ${e.message}")
+                            }
                         }
                     }
 
-                    // 🔧 v1.3.49: 只移除成功保存的领土，失败的领土保留在列表中下次重试
+                    // 🔧 v1.3.52: 移除成功保存的领土和放弃的领土
                     pendingSaveTerritories.removeAll(savedTerritories)
+                    pendingSaveTerritories.removeAll(abandonedTerritories)
+                    territoryRetryInfo.keys.removeAll(abandonedTerritories)
+
                     val saveDuration = System.currentTimeMillis() - saveStartTime
-                    pluginLogger.info("🔧 v1.3.49: 批量保存${savedCount}个领土更新，失败${failedCount}个，耗时${saveDuration}ms（失败的领土将在下次重试）")
+                    pluginLogger.info("🔧 v1.3.52: 批量保存${savedCount}个领土更新，失败${failedCount}个，放弃${abandonedCount}个，耗时${saveDuration}ms（失败的领土将在下次重试）")
 
                 } catch (e: Exception) {
                     pluginLogger.severe("批量保存领土过程中出错: ${e.message}")
                     e.printStackTrace()
-                    // 即使出现异常，也要移除已成功保存的领土
-                    if (savedTerritories.isNotEmpty()) {
+                    // 即使出现异常，也要移除已成功保存的领土和放弃的领土
+                    if (savedTerritories.isNotEmpty() || abandonedTerritories.isNotEmpty()) {
                         pendingSaveTerritories.removeAll(savedTerritories)
-                        pluginLogger.info("🔧 v1.3.49: 异常情况下已移除${savedTerritories.size}个成功保存的领土")
+                        pendingSaveTerritories.removeAll(abandonedTerritories)
+                        territoryRetryInfo.keys.removeAll(abandonedTerritories)
+                        pluginLogger.info("🔧 v1.3.52: 异常情况下已移除${savedTerritories.size}个成功保存的领土和${abandonedTerritories.size}个放弃的领土")
                     }
                 }
             }

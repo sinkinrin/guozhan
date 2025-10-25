@@ -31,6 +31,7 @@ object RandomSpawnManager {
      * 为玩家寻找随机出生点并传送
      * @param player 需要传送的玩家
      * @return 是否成功找到并传送到安全位置
+     * 🔧 v1.3.54: 修复问题3 (Medium) - 冷却期内返回false并通知玩家，而不是返回true
      */
     fun teleportPlayerToRandomSpawn(player: Player): CompletableFuture<Boolean> {
         // 防抖：同一玩家15秒内仅允许一次随机出生传送
@@ -38,13 +39,16 @@ object RandomSpawnManager {
         val uuid = player.uniqueId
         lastTeleportAt[uuid]?.let { last ->
             if (now - last < TELEPORT_COOLDOWN_MS) {
+                val remainingSeconds = (TELEPORT_COOLDOWN_MS - (now - last)) / 1000
+                player.sendMessage("§c随机传送冷却中，请等待 ${remainingSeconds} 秒")
                 pluginLogger.warning("[随机出生] 忽略重复请求：玩家 ${player.name} 在冷却期内 (${now - last}ms) ")
-                return CompletableFuture.completedFuture(true)
+                return CompletableFuture.completedFuture(false)
             }
         }
         if (!teleporting.add(uuid)) {
+            player.sendMessage("§c随机传送进行中，请稍候")
             pluginLogger.warning("[随机出生] 玩家 ${player.name} 已有随机出生进行中，忽略重复调用")
-            return CompletableFuture.completedFuture(true)
+            return CompletableFuture.completedFuture(false)
         }
 
         if (!Config.RandomSpawn.enabled) {

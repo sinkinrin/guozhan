@@ -35,12 +35,13 @@ class TaxCollectionTask {
     /**
      * 执行税收收集逻辑
      * 🔧 v1.3.23: 修复数据竞争问题 - 在异步线程中只计算和查询，在主线程中修改Country对象
+     * 🔧 v1.3.54: 修复问题1 (High) - 注册异步任务到DataManager，防止关闭时数据丢失
      */
     private fun executeTaxCollection() {
         val startTime = System.currentTimeMillis()
 
-        // 在异步线程执行数据库查询和计算操作
-        async { _ ->
+        // 在异步线程执行数据库查询和计算操作，并注册到DataManager
+        val future = java.util.concurrent.CompletableFuture.runAsync {
             try {
                 val currentTime = System.currentTimeMillis()
 
@@ -165,7 +166,10 @@ class TaxCollectionTask {
                 pluginLogger.severe("税收收集任务执行出错: ${e.message}")
                 e.printStackTrace()
             }
-        }
+        }.thenApply { null as Void? } as java.util.concurrent.CompletableFuture<Void>
+
+        // 🔧 v1.3.54: 注册异步任务到DataManager
+        cn.lcofficial.guozhan.manager.DataManager.registerAsyncTask(future)
     }
     
     /**
