@@ -183,16 +183,21 @@ object CountryManager {
                     row[Countries.mapColor]
                 )
 
-                // 加载国家的城市数据
-                Cities.select(
-                    Cities.id, Cities.owner
-                ).where { Cities.owner eq country.id.toString() }.forEach { cityRow ->
+                // 🔧 v1.3.66: 修复High问题1 - 服务器重启后国家城市缓存未填充
+                // 加载国家的城市数据并添加到country.cities列表
+                val cityIds = Cities.select(Cities.id)
+                    .where { Cities.owner eq country.id.toString() }
+                    .map { UUID.fromString(it[Cities.id].value) }
+
+                // 批量加载城市数据（CityManager内部会使用缓存）
+                cityIds.forEach { cityId ->
                     try {
-                        val cityId = UUID.fromString(cityRow[Cities.id].value)
-                        // 注意：这里只是预热缓存，不需要完整加载城市对象
-                        // 城市对象会在实际使用时通过CityManager懒加载
+                        val city = CityManager.getCity(cityId)
+                        if (city != null) {
+                            country.cities.add(city)
+                        }
                     } catch (e: IllegalArgumentException) {
-                        pluginLogger.warning("[CountryManager] 跳过无效的城市UUID: '${cityRow[Cities.id].value}' - ${e.message}")
+                        pluginLogger.warning("[CountryManager] 跳过无效的城市UUID: '$cityId' - ${e.message}")
                     }
                 }
 
@@ -256,6 +261,24 @@ object CountryManager {
                     row[Countries.lastAutoTaxTime],
                     row[Countries.mapColor]
                 )
+
+                // 🔧 v1.3.67: 修复Medium问题3 - forceReloadAll()也要加载城市列表
+                // 加载国家的城市数据并添加到country.cities列表
+                val cityIds = Cities.select(Cities.id)
+                    .where { Cities.owner eq country.id.toString() }
+                    .map { UUID.fromString(it[Cities.id].value) }
+
+                // 批量加载城市数据（CityManager内部会使用缓存）
+                cityIds.forEach { cityId ->
+                    try {
+                        val city = CityManager.getCity(cityId)
+                        if (city != null) {
+                            country.cities.add(city)
+                        }
+                    } catch (e: IllegalArgumentException) {
+                        pluginLogger.warning("[CountryManager] 跳过无效的城市UUID: '$cityId' - ${e.message}")
+                    }
+                }
 
                 // 强制更新缓存
                 countries[countryId] = country
@@ -441,8 +464,18 @@ object CountryManager {
         // 添加到缓存
         countries[country.id] = country
 
+        // 🔧 v1.3.58: 修复测试环境资源持久化问题 - 在事务内保存资源
         // 测试环境：给予国家启动资源
-        cn.lcofficial.guozhan.manager.TestEnvironmentManager.giveCountryStartupResources(country, player)
+        val resourcesGiven = cn.lcofficial.guozhan.manager.TestEnvironmentManager.giveCountryStartupResources(country, player)
+        if (resourcesGiven) {
+            // 在同一个事务中更新国家资源到数据库
+            Countries.update({ Countries.id eq country.id.toString() }) {
+                it[Countries.gold] = country.gold
+                it[Countries.diamond] = country.diamond
+                it[Countries.economyPoints] = country.economyPoints
+            }
+            pluginLogger.info("[测试环境] 国家 ${country.name} 的启动资源已在事务中保存: 金币=${country.gold}, 钻石=${country.diamond}, 经济点数=${country.economyPoints}")
+        }
 
         country
     }
@@ -586,13 +619,19 @@ object CountryManager {
                 pluginLogger.info("[删除国家] 已删除${techCount} 条科技研究记录")
             }
 
-            // 6. 删除城市（Cities）
-            val cityCount = Cities.selectAll()
-                .where { Cities.owner eq country.id.toString() }
-                .count()
+            // 6. 清空城市所有者（Cities），而不是删除城市记录
+            // 🔧 v1.3.64: 修复灭国后无法在原地重建的问题 - 清空所有者而非删除城市
+            val cityCount = Cities.update({ Cities.owner eq country.id.toString() }) {
+                it[owner] = null
+            }
             if (cityCount > 0) {
-                Cities.deleteWhere { Cities.owner eq country.id.toString() }
-                pluginLogger.info("[删除国家] 已删除${cityCount} 个城市")
+                // 同时清理缓存中的城市所有者
+                CityManager.cities.values.forEach { city ->
+                    if (city.owner?.id == country.id) {
+                        city.owner = null
+                    }
+                }
+                pluginLogger.info("[删除国家] 已清空${cityCount} 个城市的所有者，现在可以在这些位置重新建国")
             }
 
             // 7. 删除国家记录

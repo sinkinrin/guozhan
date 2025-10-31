@@ -38,6 +38,12 @@ class TaxCollectionTask {
      * 🔧 v1.3.54: 修复问题1 (High) - 注册异步任务到DataManager，防止关闭时数据丢失
      */
     private fun executeTaxCollection() {
+        // 🔧 v1.3.66: 检查是否有其他税收任务正在执行
+        if (!EconomyTasks.taxCollectionLock.compareAndSet(false, true)) {
+            pluginLogger.warning("🔧 [税收系统] 每小时税收任务跳过：检测到其他税收任务正在执行，避免竞态条件")
+            return
+        }
+
         val startTime = System.currentTimeMillis()
 
         // 在异步线程执行数据库查询和计算操作，并注册到DataManager
@@ -80,6 +86,16 @@ class TaxCollectionTask {
                     val territories = cn.lcofficial.guozhan.manager.TerritoryManager.getTerritoriesByCountry(country)
                     if (territories.isEmpty()) {
                         skippedZeroTerritoryCountries++
+
+                        // 🔧 v1.3.67: 修复High问题1 - 零领土国家也要更新时间戳，防止重新占领后税收暴增
+                        // 即使没有领土，也要更新lastAutoTaxTime，避免重新占领后计算整个空闲期间的税收
+                        cn.lcofficial.guozhan.util.run {
+                            country.lastAutoTaxTime = currentTime
+                            country.save()
+                            // 同步更新TaxSystem缓存
+                            cn.lcofficial.guozhan.economy.TaxSystem.updateLastCollectionTime(country.id, currentTime)
+                        }
+
                         continue
                     }
 
@@ -127,44 +143,55 @@ class TaxCollectionTask {
                 // 🔧 v1.3.43: 修复税收收集任务在异步线程中直接修改共享状态 - 在GlobalRegionScheduler中应用税收
                 if (taxResults.isNotEmpty()) {
                     run { _ ->
-                        var processedCountries = 0
-                        val notifications = mutableListOf<Triple<UUID, Int, Int>>()
+                        try {
+                            var processedCountries = 0
+                            val notifications = mutableListOf<Triple<UUID, Int, Int>>()
 
-                        for ((countryId, taxResult) in taxResults) {
-                            val country = CountryManager.getCountry(countryId) ?: continue
+                            for ((countryId, taxResult) in taxResults) {
+                                val country = CountryManager.getCountry(countryId) ?: continue
 
-                            // 应用税收计算结果到国家
-                            cn.lcofficial.guozhan.economy.RegionalTaxSystem.applyTax(country, taxResult)
+                                // 应用税收计算结果到国家
+                                cn.lcofficial.guozhan.economy.RegionalTaxSystem.applyTax(country, taxResult)
 
-                            // 🔧 v1.3.48: 修复问题4 - 更新数据库字段和TaxSystem的taxPolicies时间戳
-                            country.lastAutoTaxTime = currentTime
-                            country.save()
+                                // 🔧 v1.3.48: 修复问题4 - 更新数据库字段和TaxSystem的taxPolicies时间戳
+                                country.lastAutoTaxTime = currentTime
+                                country.save()
 
-                            // 🔧 v1.3.48: 修复问题4 - 将新的时间戳推送回TaxSystem.taxPolicies
-                            cn.lcofficial.guozhan.economy.TaxSystem.updateLastCollectionTime(country.id, currentTime)
+                                // 🔧 v1.3.48: 修复问题4 - 将新的时间戳推送回TaxSystem.taxPolicies
+                                cn.lcofficial.guozhan.economy.TaxSystem.updateLastCollectionTime(country.id, currentTime)
 
-                            // 🔧 v1.3.38: 触发BossBar实时更新，显示税收收入增量
-                            cn.lcofficial.guozhan.manager.EconomyBossBarManager.recordTaxIncome(country, taxResult.goldTax, taxResult.diamondTax)
+                                // 🔧 v1.3.38: 触发BossBar实时更新，显示税收收入增量
+                                cn.lcofficial.guozhan.manager.EconomyBossBarManager.recordTaxIncome(country, taxResult.goldTax, taxResult.diamondTax)
 
-                            // 记录详细日志
-                            pluginLogger.info("🔧 [税收收集] 国家 ${country.name} 收集税收: ${taxResult.goldTax} 金币, ${taxResult.diamondTax} 钻石")
-                            processedCountries++
+                                // 记录详细日志
+                                pluginLogger.info("🔧 [税收收集] 国家 ${country.name} 收集税收: ${taxResult.goldTax} 金币, ${taxResult.diamondTax} 钻石")
+                                processedCountries++
 
-                            notifications.add(Triple(countryId, taxResult.goldTax, taxResult.diamondTax))
-                        }
+                                notifications.add(Triple(countryId, taxResult.goldTax, taxResult.diamondTax))
+                            }
 
-                        pluginLogger.info("税收收集完成，处理了 $processedCountries 个国家")
+                            pluginLogger.info("税收收集完成，处理了 $processedCountries 个国家")
 
-                        // 通知在线成员
-                        for ((countryId, goldTax, diamondTax) in notifications) {
-                            notifyTaxCollection(countryId, goldTax, diamondTax)
+                            // 通知在线成员
+                            for ((countryId, goldTax, diamondTax) in notifications) {
+                                notifyTaxCollection(countryId, goldTax, diamondTax)
+                            }
+                        } finally {
+                            // 🔧 v1.3.68: 修复High问题3 - 将锁释放移动到主线程回调末尾
+                            // 确保锁在税收应用完成后才释放，而不是在异步计算结束时释放
+                            EconomyTasks.taxCollectionLock.set(false)
                         }
                     }
+                } else {
+                    // 🔧 v1.3.68: 如果没有税收结果，也要释放锁
+                    EconomyTasks.taxCollectionLock.set(false)
                 }
 
             } catch (e: Exception) {
                 pluginLogger.severe("税收收集任务执行出错: ${e.message}")
                 e.printStackTrace()
+                // 🔧 v1.3.68: 异常情况下也要释放锁
+                EconomyTasks.taxCollectionLock.set(false)
             }
         }.thenApply { null as Void? } as java.util.concurrent.CompletableFuture<Void>
 

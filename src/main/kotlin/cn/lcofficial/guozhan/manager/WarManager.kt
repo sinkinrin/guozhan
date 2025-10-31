@@ -384,6 +384,7 @@ object WarManager {
 
     /**
      * GM模式：手动结束战争
+     * 🔧 v1.3.56: 添加宝箱奖励发放逻辑
      */
     fun endWarGM(country1: Country, country2: Country, gmSender: CommandSender?) {
         val warId = getWarId(country1, country2)
@@ -413,6 +414,16 @@ object WarManager {
             }
         }
 
+        // 🔧 v1.3.56: 添加宝箱奖励发放逻辑
+        // 为胜利者生成宝箱奖励（如果有胜利者）
+        if (winner != null) {
+            distributeWarRewardChest(winner, isGMMode = true)
+        } else {
+            // 平局时，两个国家都获得一半奖励
+            distributeWarRewardChest(country1, isGMMode = true, rewardPercentage = 0.5)
+            distributeWarRewardChest(country2, isGMMode = true, rewardPercentage = 0.5)
+        }
+
         // 广播战争结束消息（带GM标识）
         val message = if (winner != null) {
             val loserName = if (winner.id == country1.id) country2.name else country1.name
@@ -426,7 +437,146 @@ object WarManager {
         }
 
         gmSender?.sendMessage("§a已手动结束战争: ${country1.name} vs ${country2.name}")
+        gmSender?.sendMessage("§a战争奖励宝箱已生成在核心附近")
         Guozhan.instance.logger.info("[GM模式] 手动结束战争: ${country1.name} vs ${country2.name}, 胜利者: ${winner?.name ?: "无"}")
+    }
+
+    /**
+     * 🔧 v1.3.56: 为国家生成战争奖励宝箱
+     * 🔧 v1.3.58: 修复宝箱生成位置错误 - 在地面生成而非高空
+     * @param country 获得奖励的国家
+     * @param isGMMode 是否为GM模式（用于日志标记）
+     * @param rewardPercentage 奖励百分比（默认1.0=100%）
+     */
+    private fun distributeWarRewardChest(country: Country, isGMMode: Boolean = false, rewardPercentage: Double = 1.0) {
+        val goldReward = (1000 * rewardPercentage).toInt()
+        val diamondReward = (100 * rewardPercentage).toInt()
+
+        // 在核心附近生成奖励箱
+        val coreLocation = country.getCoreLocation()
+        if (coreLocation == null) {
+            Guozhan.instance.logger.warning("[战争奖励] 国家 ${country.name} 没有核心位置，无法生成奖励箱")
+            return
+        }
+
+        // 🔧 v1.3.57: 修复宝箱生成位置 - 从核心位置向下搜索真正的地面
+        val groundLocation = findGroundBelow(coreLocation)
+        val rewardLocation = groundLocation.clone().add(0.0, 1.0, 0.0) // 地面上方1格
+
+        // 🔧 使用RegionScheduler在正确的区域线程中执行方块操作
+        org.bukkit.Bukkit.getRegionScheduler().execute(cn.lcofficial.guozhan.Guozhan.instance, rewardLocation) {
+            try {
+                val block = rewardLocation.block
+
+                // 如果位置已有方块，尝试找附近的空位
+                if (block.type != org.bukkit.Material.AIR) {
+                    val nearbyLocation = findNearbyAirBlock(rewardLocation)
+                    if (nearbyLocation != null) {
+                        nearbyLocation.block.type = org.bukkit.Material.CHEST
+                        val chest = nearbyLocation.block.state as org.bukkit.block.Chest
+                        fillRewardChest(chest, goldReward, diamondReward)
+                        spawnRewardParticles(nearbyLocation)
+
+                        val modeTag = if (isGMMode) "[GM模式]" else "[王战奖励]"
+                        cn.lcofficial.guozhan.Guozhan.instance.logger.info("$modeTag 已为国家 ${country.name} 生成奖励箱: ${goldReward}金 ${diamondReward}钻 (位置: ${nearbyLocation.blockX}, ${nearbyLocation.blockY}, ${nearbyLocation.blockZ})")
+                    } else {
+                        cn.lcofficial.guozhan.Guozhan.instance.logger.warning("[战争奖励] 国家 ${country.name} 核心附近没有空位，无法生成奖励箱")
+                    }
+                } else {
+                    // 直接在核心上方生成宝箱
+                    block.type = org.bukkit.Material.CHEST
+                    val chest = block.state as org.bukkit.block.Chest
+                    fillRewardChest(chest, goldReward, diamondReward)
+                    spawnRewardParticles(rewardLocation)
+
+                    val modeTag = if (isGMMode) "[GM模式]" else "[王战奖励]"
+                    cn.lcofficial.guozhan.Guozhan.instance.logger.info("$modeTag 已为国家 ${country.name} 生成奖励箱: ${goldReward}金 ${diamondReward}钻 (位置: ${rewardLocation.blockX}, ${rewardLocation.blockY}, ${rewardLocation.blockZ})")
+                }
+            } catch (e: Exception) {
+                cn.lcofficial.guozhan.Guozhan.instance.logger.severe("[战争奖励] 为国家 ${country.name} 生成奖励箱时出错: ${e.message}")
+                e.printStackTrace()
+            }
+        }
+    }
+
+    /**
+     * 🔧 v1.3.57: 从指定位置向下搜索地面
+     */
+    private fun findGroundBelow(startLocation: org.bukkit.Location): org.bukkit.Location {
+        val world = startLocation.world
+        var currentY = startLocation.blockY
+
+        // 向下搜索，最多搜索100格
+        for (i in 0..100) {
+            val checkLocation = org.bukkit.Location(world, startLocation.blockX.toDouble(), currentY.toDouble(), startLocation.blockZ.toDouble())
+            val block = checkLocation.block
+
+            // 找到固体方块（地面）
+            if (block.type.isSolid && block.type != org.bukkit.Material.AIR) {
+                return checkLocation
+            }
+
+            currentY--
+
+            // 到达世界底部
+            if (currentY < world.minHeight) {
+                return org.bukkit.Location(world, startLocation.blockX.toDouble(), world.minHeight.toDouble(), startLocation.blockZ.toDouble())
+            }
+        }
+
+        // 如果没找到地面，返回起始位置下方10格
+        return startLocation.clone().add(0.0, -10.0, 0.0)
+    }
+
+    /**
+     * 🔧 v1.3.56: 寻找附近的空气方块
+     */
+    private fun findNearbyAirBlock(center: org.bukkit.Location): org.bukkit.Location? {
+        val world = center.world
+        val centerX = center.blockX
+        val centerY = center.blockY
+        val centerZ = center.blockZ
+
+        // 在3x3x3范围内搜索空气方块
+        for (dx in -1..1) {
+            for (dy in -1..1) {
+                for (dz in -1..1) {
+                    val checkLocation = org.bukkit.Location(world, (centerX + dx).toDouble(), (centerY + dy).toDouble(), (centerZ + dz).toDouble())
+                    if (checkLocation.block.type == org.bukkit.Material.AIR) {
+                        return checkLocation
+                    }
+                }
+            }
+        }
+        return null
+    }
+
+    /**
+     * 🔧 v1.3.56: 填充奖励宝箱
+     */
+    private fun fillRewardChest(chest: org.bukkit.block.Chest, goldReward: Int, diamondReward: Int) {
+        val inventory = chest.inventory
+        repeat(goldReward) {
+            inventory.addItem(org.bukkit.inventory.ItemStack(org.bukkit.Material.GOLD_INGOT))
+        }
+        repeat(diamondReward) {
+            inventory.addItem(org.bukkit.inventory.ItemStack(org.bukkit.Material.DIAMOND))
+        }
+    }
+
+    /**
+     * 🔧 v1.3.56: 生成奖励粒子效果
+     */
+    private fun spawnRewardParticles(location: org.bukkit.Location) {
+        location.world.spawnParticle(
+            org.bukkit.Particle.FIREWORK,
+            location.clone().add(0.5, 1.0, 0.5),
+            50,
+            0.5,
+            0.5,
+            0.5,
+            0.1
+        )
     }
 
     /**

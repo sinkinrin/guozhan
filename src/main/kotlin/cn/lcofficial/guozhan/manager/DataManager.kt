@@ -8,6 +8,7 @@ import cn.lcofficial.guozhan.data.ClaimProgresses
 import cn.lcofficial.guozhan.data.Countries
 import cn.lcofficial.guozhan.data.CountryTechnologies
 import cn.lcofficial.guozhan.data.DiplomaticRelations
+import cn.lcofficial.guozhan.data.DiplomaticRequests
 import cn.lcofficial.guozhan.data.Technologies
 import cn.lcofficial.guozhan.data.Territories
 import cn.lcofficial.guozhan.data.TerritoryBlocks
@@ -81,9 +82,11 @@ object DataManager {
             Database.connect(dataSource)
             transaction {
                 // 🔧 v1.3.52: 添加 WarEvents 表到数据库迁移
+                // 🔧 v1.3.63: 添加 DiplomaticRequests 表到数据库迁移
                 MigrationUtils.statementsRequiredForDatabaseMigration(
                     Users, Countries, Cities, TerritoryBlocks, Territories,
-                    DiplomaticRelations, Technologies, CountryTechnologies, ClaimProgresses, WarEvents
+                    DiplomaticRelations, Technologies, CountryTechnologies, ClaimProgresses, WarEvents,
+                    DiplomaticRequests
                 ).forEach(::exec)
             }
             pluginLogger.info("连接成功")

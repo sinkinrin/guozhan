@@ -48,6 +48,11 @@ class Guozhan : JavaPlugin() {
     }
     
     override fun onEnable() {
+        // 🔧 v1.3.64: 更新版本号
+        logger.info("=".repeat(50))
+        logger.info("GuoZhan v1.3.64 已加载")
+        logger.info("=".repeat(50))
+
         // 🔧 v1.3.52: 修复数据库连接失败后插件仍继续运行 - 捕获初始化异常并禁用插件
         try {
             initialize()
@@ -111,7 +116,10 @@ class Guozhan : JavaPlugin() {
         
         // 启动经济任务
         EconomyTasks.startTasks()
-        
+
+        // 🔧 v1.3.63: 启动外交请求清理任务
+        cn.lcofficial.guozhan.task.DiplomaticRequestCleanupTask.start()
+
         // 启动王战定时�?- 使用Folia调度�?
         runRepeat(20L, 1200L) { task ->
             try {
@@ -258,6 +266,9 @@ class Guozhan : JavaPlugin() {
 
     }
     override fun onDisable() {
+        // 🔧 v1.3.63: 停止外交请求清理任务
+        cn.lcofficial.guozhan.task.DiplomaticRequestCleanupTask.stop()
+
         // 🔧 v1.3.48: 强制保存所有待保存数据，防止数据丢�?
         logger.info("正在强制保存所有待保存数据...")
 

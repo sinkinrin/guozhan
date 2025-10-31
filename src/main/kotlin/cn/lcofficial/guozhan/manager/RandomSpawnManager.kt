@@ -133,22 +133,25 @@ object RandomSpawnManager {
                 val duration = System.currentTimeMillis() - startTime
                 pluginLogger.warning("随机出生点查找失败，耗时: ${duration}ms, 尝试次数: $attempts")
 
-                // 使用世界出生点作为回退
+                // 🔧 v1.3.64: 改进回退机制 - 使用真实地面高度而非固定Y=70
+                // 原代码使用固定Y=70，导致玩家从高空落下（即使有摔落保护，体验也不好）
                 val worldSpawn = world.spawnLocation
                 val isFlat = isLikelyFlatWorld(world)
 
-                val fallbackLocation = worldSpawn.clone().apply {
-                    // 根据世界类型调整高度
-                    y = if (isFlat) {
-                        // 平坦世界：使用世界出生点的实际高度，确保在地面上
-                        maxOf(worldSpawn.y, 5.0)
-                    } else {
-                        // 普通世界：使用安全高度
-                        maxOf(worldSpawn.y, 70.0)
-                    }
+                // 获取世界出生点的真实地面高度
+                val groundY = try {
+                    world.getHighestBlockYAt(worldSpawn.blockX, worldSpawn.blockZ)
+                } catch (e: Exception) {
+                    pluginLogger.warning("[随机出生] 获取地面高度失败: ${e.message}")
+                    if (isFlat) 5 else 70  // 回退到固定高度
                 }
 
-                pluginLogger.warning("[随机出生] 使用回退机制: 世界出生点 (${worldSpawn.x}, ${worldSpawn.y}, ${worldSpawn.z}) -> 调整后 (${fallbackLocation.x}, ${fallbackLocation.y}, ${fallbackLocation.z}), 世界类型: ${if (isFlat) "平坦" else "普通"}")
+                val fallbackLocation = worldSpawn.clone().apply {
+                    // 在地面上方1格传送玩家
+                    y = (groundY + 1).toDouble()
+                }
+
+                pluginLogger.warning("[随机出生] 使用回退机制: 世界出生点 (${worldSpawn.x}, ${worldSpawn.y}, ${worldSpawn.z}) -> 地面高度Y=$groundY -> 调整后 (${fallbackLocation.x}, ${fallbackLocation.y}, ${fallbackLocation.z}), 世界类型: ${if (isFlat) "平坦" else "普通"}")
                 future.complete(fallbackLocation)
                 return
             }
@@ -377,18 +380,10 @@ object RandomSpawnManager {
                 return false
             }
 
-            // 根据世界类型调整高度检查范围
-            val (minY, maxY) = if (isLikelyFlatWorld(location.world)) {
-                // 平坦世界：地面在Y=4-7，允许Y=5-15的范围
-                Pair(5, 15)
-            } else {
-                // 普通世界：使用原有范围
-                Pair(60, 120)
-            }
-
-            if (y < minY || y > maxY) {
-                return false
-            }
+            // 🔧 v1.3.64: 移除硬编码的高度检查（第384-394行）
+            // 原代码对普通世界使用60-120的硬编码范围，导致大部分地面被拒绝
+            // 现在只使用配置文件中的minYLevel和maxYLevel（已在第342-345行检查）
+            // 配置文件已更新为-64到320，适配Minecraft 1.18+世界高度
 
             // 4. 🔧 v1.3.17: 修复随机出生点方块类型检查 - 确保不在水中、岩浆中或空中出生
             val world = location.world
@@ -449,18 +444,15 @@ object RandomSpawnManager {
                 }
             }
 
-            // 5. 基于坐标的启发式检查（避免明显不安全的位置）
-            // 避免在坐标为0的位置（通常是出生点附近）
-            if (x in -5..5 && z in -5..5) {
-                return false
-            }
+            // 🔧 v1.3.64: 移除过于严格的启发式检查
+            // 原代码包含两个问题：
+            // 1. 坐标0附近检查（-5到5）过于严格且多余（已有minDistanceFromSpawn=1000检查）
+            // 2. 分布检查拒绝80%的候选位置，导致随机出生成功率极低
+            // 这些检查导致50次尝试全部失败，触发回退机制（从Y=70高空落下）
 
-            // 6. 简单的分布检查（避免过于聚集）
-            // 使用坐标哈希来分散生成点
-            val hash = (x * 31 + z) % 100
-            if (hash < 20) { // 只有20%的位置被认为是"好"的
-                return false
-            }
+            // 保留注释以记录历史问题：
+            // 原代码1: if (x in -5..5 && z in -5..5) return false
+            // 原代码2: val hash = (x * 31 + z) % 100; if (hash < 20) return false
 
             pluginLogger.fine("[随机出生] 位置 ($x, $y, $z) 通过安全检查: 地面=${groundBlock.type}, 出生点=${spawnBlock.type}, 头部=${headBlock.type}")
             return true

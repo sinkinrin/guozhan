@@ -66,14 +66,17 @@ object Config : Configuration("config.yml") {
 
     internal object RandomSpawn : StaticLazy {
         var enabled by bool("random-spawn.enabled", true)
-        var spawnRadius by int("random-spawn.spawn-radius", 5000)
+        // 🔧 v1.3.64: 修正spawnRadius以符合原始需求（直径15000 = 半径7500）
+        var spawnRadius by int("random-spawn.spawn-radius", 7500)
         var maxAttempts by int("random-spawn.max-attempts", 50)
         var safetyCheckRadius by int("random-spawn.safety-check-radius", 3)
         var minDistanceFromSpawn by int("random-spawn.min-distance-from-spawn", 1000)
         var allowedWorlds by stringList("random-spawn.allowed-worlds", listOf("world"))
         var unsafeBlocks by stringList("random-spawn.unsafe-blocks", listOf("LAVA", "WATER", "FIRE"))
-        var minYLevel by int("random-spawn.min-y-level", 60)
-        var maxYLevel by int("random-spawn.max-y-level", 120)
+        // 🔧 v1.3.64: 修正Y坐标范围以适配Minecraft 1.18+世界高度（-64到320）
+        // 原值60-120过于严格，导致大部分地面被拒绝（山谷<60、山顶>120）
+        var minYLevel by int("random-spawn.min-y-level", -64)
+        var maxYLevel by int("random-spawn.max-y-level", 320)
     }
 
     internal object Technology : StaticLazy {

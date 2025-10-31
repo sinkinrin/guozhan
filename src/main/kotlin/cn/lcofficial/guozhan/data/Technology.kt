@@ -8,9 +8,10 @@ import java.util.*
 
 /**
  * 科技数据表
+ * 🔧 v1.3.55: 修复主键约束问题 - 改为普通Table并显式定义主键
  */
-object Technologies : IdTable<String>("gz_technologies") {
-    override val id = varchar("id", 32).entityId()
+object Technologies : Table("gz_technologies") {
+    val id = varchar("id", 32)
     val name = varchar("name", 64)
     val description = text("description")
     val icon = varchar("icon", 32)
@@ -20,6 +21,8 @@ object Technologies : IdTable<String>("gz_technologies") {
     val effects = text("effects")             // JSON格式存储每级效果
     val category = varchar("category", 32).default("basic") // 科技分类
     val enabled = bool("enabled").default(true) // 是否启用
+
+    override val primaryKey = PrimaryKey(id)
 }
 
 /**

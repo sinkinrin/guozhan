@@ -63,10 +63,12 @@ object TestEnvironmentManager {
     /**
      * 当玩家创建国家时给予国家资源
      * 🔧 v1.3.51: 修复国库资源重复发放问题 - 添加检查机制防止重复给予启动资源
+     * 🔧 v1.3.58: 修复资源持久化问题 - 返回是否需要保存，由调用方在事务中保存
+     * @return 是否修改了国家资源（需要保存）
      */
-    fun giveCountryStartupResources(country: Country, creator: Player) {
+    fun giveCountryStartupResources(country: Country, creator: Player): Boolean {
         if (!isTestEnvironmentEnabled() || !Config.TestEnvironment.autoGiveCountryResources) {
-            return
+            return false
         }
 
         // 🔧 v1.3.51: 检查国家是否已经获得过启动资源
@@ -78,7 +80,7 @@ object TestEnvironmentManager {
         if (hasEnoughGold && hasEnoughDiamond && hasEnoughEconomyPoints) {
             // 国家已经有足够资源，不重复给予
             creator.sendMessage("§e[测试环境] 国家已拥有足够的启动资源，跳过发放")
-            return
+            return false
         }
 
         // 给予国家资源（只给予缺少的部分）
@@ -86,10 +88,13 @@ object TestEnvironmentManager {
         val diamondToGive = maxOf(0, Config.TestEnvironment.CountryResources.diamond - country.diamond)
         val economyPointsToGive = maxOf(0, Config.TestEnvironment.CountryResources.economyPoints - country.economyPoints)
 
+        // 🔧 v1.3.58: 只修改对象，不调用save()，由调用方在事务中保存
         country.gold += goldToGive
         country.diamond += diamondToGive
         country.economyPoints += economyPointsToGive
-        country.save()
+
+        // 🔧 v1.3.58: 添加详细的调试日志
+        cn.lcofficial.guozhan.Guozhan.instance.logger.info("[测试环境] 准备发放启动资源: 金币 ${country.gold - goldToGive} → ${country.gold}, 钻石 ${country.diamond - diamondToGive} → ${country.diamond}, 经济点数 ${country.economyPoints - economyPointsToGive} → ${country.economyPoints}")
 
         creator.sendMessage("§a[测试环境] 国家已自动获得启动资源！")
         if (goldToGive > 0) creator.sendMessage("§7- 金币: +${goldToGive}")
@@ -98,6 +103,8 @@ object TestEnvironmentManager {
 
         // 记录日志
         cn.lcofficial.guozhan.Guozhan.instance.logger.info("[测试环境] 为国家 ${country.name} 发放启动资源: 金币+${goldToGive}, 钻石+${diamondToGive}, 经济点数+${economyPointsToGive}")
+
+        return true // 返回true表示需要保存
     }
     
     /**

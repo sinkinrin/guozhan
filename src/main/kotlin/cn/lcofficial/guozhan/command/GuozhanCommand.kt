@@ -15,6 +15,7 @@ import cn.lcofficial.guozhan.data.Cities
 import cn.lcofficial.guozhan.data.Countries
 import cn.lcofficial.guozhan.data.Country
 import cn.lcofficial.guozhan.data.DiplomaticRelations
+import cn.lcofficial.guozhan.data.DiplomaticRequest
 import cn.lcofficial.guozhan.data.Profession
 import cn.lcofficial.guozhan.data.Rank
 import cn.lcofficial.guozhan.data.RelationType
@@ -30,6 +31,7 @@ import cn.lcofficial.guozhan.manager.CityManager.city
 import cn.lcofficial.guozhan.manager.CooldownManager
 import cn.lcofficial.guozhan.manager.CountryManager
 import cn.lcofficial.guozhan.manager.DiplomacyManager
+import cn.lcofficial.guozhan.manager.DiplomaticRequestManager
 import cn.lcofficial.guozhan.manager.EconomyManager
 import cn.lcofficial.guozhan.manager.ShieldManager
 import cn.lcofficial.guozhan.manager.TeleportManager
@@ -212,6 +214,8 @@ object GuozhanCommand : TabExecutor {
 
     /**
      * 设置与其他国家的外交关系
+     * 🔧 v1.3.62: 添加状态检查，防止战争期间的单方面操作
+     * 🔧 v1.3.63: 需要双方确认的操作改为发起请求
      */
     private fun setRelation(sender: CommandSender, targetCountryName: String, relationTypeStr: String) {
         if (sender !is Player) {
@@ -258,6 +262,56 @@ object GuozhanCommand : TabExecutor {
             }
         }
 
+        // 🔧 v1.3.62: 获取当前关系并进行状态检查
+        val currentRelation = DiplomacyManager.getRelation(country, targetCountry)
+
+        // 🔧 v1.3.63: 需要双方确认的操作改为发起请求
+        when (relationType) {
+            RelationType.ALLIED -> {
+                // 结盟需要双方确认
+                if (currentRelation.relationType == RelationType.WAR) {
+                    sender.sendMessage("§c战争期间无法结盟！必须先停战。")
+                    sender.sendMessage("§7提示：使用 /u diplomacy request ${targetCountry.name} neutral 发起停战请求。")
+                    return
+                }
+                sender.sendMessage("§e结盟需要双方确认！请使用 /u diplomacy request ${targetCountry.name} allied 发起结盟请求。")
+                return
+            }
+            RelationType.WAR -> {
+                // 宣战可以单方面，但检查是否已经处于战争状态
+                if (currentRelation.relationType == RelationType.WAR) {
+                    sender.sendMessage("§c你的国家已经与 ${targetCountry.name} 处于战争状态！")
+                    return
+                }
+                // 使用专门的宣战命令更合适
+                sender.sendMessage("§e建议：使用 /u war declare ${targetCountry.name} 命令宣战。")
+            }
+            RelationType.NEUTRAL, RelationType.FRIENDLY -> {
+                // 从战争改为和平需要双方确认
+                if (currentRelation.relationType == RelationType.WAR) {
+                    sender.sendMessage("§e战争期间停战需要双方确认！请使用 /u diplomacy request ${targetCountry.name} neutral 发起停战请求。")
+                    return
+                }
+                // 从同盟改为其他关系需要双方确认
+                if (currentRelation.relationType == RelationType.ALLIED) {
+                    sender.sendMessage("§e解除同盟需要双方确认！请使用 /u diplomacy request ${targetCountry.name} ${relationTypeStr.lowercase()} 发起请求。")
+                    return
+                }
+            }
+            RelationType.HOSTILE -> {
+                // 敌对关系可以单方面设置（表示单方面的敌意）
+                if (currentRelation.relationType == RelationType.WAR) {
+                    sender.sendMessage("§c战争期间无法改变关系！必须先结束战争。")
+                    return
+                }
+                // 从同盟改为敌对需要双方确认
+                if (currentRelation.relationType == RelationType.ALLIED) {
+                    sender.sendMessage("§e解除同盟需要双方确认！请使用 /u diplomacy request ${targetCountry.name} hostile 发起请求。")
+                    return
+                }
+            }
+        }
+
         // 更新关系
         DiplomacyManager.updateRelation(country, targetCountry, relationType)
 
@@ -271,6 +325,9 @@ object GuozhanCommand : TabExecutor {
         }
 
         sender.sendMessage("§a成功将与 ${targetCountry.name} 的关系设置为: $relationName")
+
+        // 🔧 v1.3.62: 记录外交关系变更日志
+        Guozhan.instance.logger.info("[外交系统] ${country.name} 将与 ${targetCountry.name} 的关系设置为: $relationName (操作者: ${sender.name})")
     }
 
     /**
@@ -592,7 +649,8 @@ object GuozhanCommand : TabExecutor {
             "diplomacy" -> {
                 if (sender.hasPermission("guozhan.command.diplomacy")) {
                     if (args.size < 2) {
-                        sender.sendMessage("§c用法: /u diplomacy <set|list>")
+                        sender.sendMessage("§c用法: /u diplomacy <set|list|request|requests|accept|reject>")
+                        sender.sendMessage("§7提示: 使用 /u help diplomacy 查看详细帮助")
                         return
                     }
                     when (args[1].lowercase()) {
@@ -604,6 +662,30 @@ object GuozhanCommand : TabExecutor {
                             setRelation(sender, args[2], args[3])
                         }
                         "list" -> listRelations(sender)
+                        // 🔧 v1.3.63: 新增外交请求相关命令
+                        "request" -> {
+                            if (args.size < 4) {
+                                sender.sendMessage("§c用法: /u diplomacy request <国家名> <关系类型>")
+                                sender.sendMessage("§7可用关系类型: allied (结盟), neutral (停战)")
+                                return
+                            }
+                            createDiplomaticRequest(sender, args[2], args[3])
+                        }
+                        "requests" -> listDiplomaticRequests(sender)
+                        "accept" -> {
+                            if (args.size < 3) {
+                                sender.sendMessage("§c用法: /u diplomacy accept <国家名>")
+                                return
+                            }
+                            acceptDiplomaticRequest(sender, args[2])
+                        }
+                        "reject" -> {
+                            if (args.size < 3) {
+                                sender.sendMessage("§c用法: /u diplomacy reject <国家名>")
+                                return
+                            }
+                            rejectDiplomaticRequest(sender, args[2])
+                        }
                         else -> sender.sendMessage("§c未知的外交命令: ${args[1]}")
                     }
                 } else sender.sendMessage(Message.NoPermission.mini())
@@ -957,6 +1039,26 @@ object GuozhanCommand : TabExecutor {
                 sender.sendInfo("/u title <玩家> <头衔> - 设置成员头衔")
                 sender.sendInfo("/u transfer <玩家> - 转让君主之位")
             }
+            "profession", "职业" -> {
+                sender.sendInfo("=== 职业系统命令 ===")
+                sender.sendInfo("/u profession set <职业> - 设置职业（只能选择一次）")
+                sender.sendInfo("/u profession upgrade - 升级职业到2级")
+                sender.sendInfo("/u profession info - 查看当前职业信息")
+                sender.sendInfo("/u profession list - 查看所有职业列表")
+                sender.sendInfo("")
+                sender.sendInfo("§e可用职业:")
+                sender.sendInfo("  scout - 斥候（速度提升）")
+                sender.sendInfo("  craftsman - 工匠（挖掘速度提升）")
+                sender.sendInfo("  berserker - 狂战士（攻击力提升）")
+                sender.sendInfo("  guardian - 守护者（抗性提升）")
+                sender.sendInfo("  leaper - 跳跃者（跳跃力提升）")
+                sender.sendInfo("  priest - 牧师（生命恢复）")
+                sender.sendInfo("  conqueror - 征服者（占领速度加成）")
+                sender.sendInfo("")
+                sender.sendInfo("§7注意: 建国后需等待2小时才能设置职业")
+                sender.sendInfo("§7注意: 设置职业后需等待24小时才能升级")
+                sender.sendInfo("§7注意: 升级到2级需要消耗50钻石")
+            }
             else -> {
                 sender.sendInfo("=== GuoZhan 国战插件帮助 ===")
                 sender.sendInfo("使用 /u help <分类> 查看详细命令")
@@ -966,6 +1068,7 @@ object GuozhanCommand : TabExecutor {
                 sender.sendInfo("  economy - 经济管理")
                 sender.sendInfo("  diplomacy - 外交战争")
                 sender.sendInfo("  member - 成员管理")
+                sender.sendInfo("  profession - 职业系统")
                 sender.sendInfo("§7示例: /u help country")
             }
         }
@@ -1770,10 +1873,11 @@ object GuozhanCommand : TabExecutor {
                     return@execute
                 }
 
-                // 回到主线程给予地图物品
-                org.bukkit.Bukkit.getGlobalRegionScheduler().execute(cn.lcofficial.guozhan.Guozhan.instance) {
+                // 🔧 v1.3.56: 修复Folia线程安全问题 - 使用EntityScheduler给予地图物品
+                // giveMapToPlayer()中需要访问player.location.chunk，必须在EntityScheduler中执行
+                player.scheduler.run(cn.lcofficial.guozhan.Guozhan.instance, { _ ->
                     giveMapToPlayer(player, mapView)
-                }
+                }, null)
 
             } catch (e: Exception) {
                 cn.lcofficial.guozhan.Guozhan.instance.logger.severe("创建疆域地图时发生异常: ${e.message}")
@@ -3786,6 +3890,282 @@ object GuozhanCommand : TabExecutor {
                 cn.lcofficial.guozhan.Guozhan.instance.logger.severe("❌ [GM战争] 结束战争失败: ${e.message}")
                 e.printStackTrace()
             }
+        }
+    }
+
+    // ==================== 外交请求相关命令 (v1.3.63) ====================
+
+    /**
+     * 创建外交请求
+     * 🔧 v1.3.63: 实现外交系统双方确认机制
+     */
+    private fun createDiplomaticRequest(sender: CommandSender, targetCountryName: String, relationTypeStr: String) {
+        if (sender !is Player) {
+            sender.sendMessage("§c该命令只能由玩家执行！")
+            return
+        }
+
+        val user = sender.user()
+        val country = user.country
+        if (country == null) {
+            sender.sendMessage("§c你不属于任何国家！")
+            return
+        }
+
+        // 权限检查
+        if (!user.hasCountryPermission("manage_diplomacy")) {
+            sender.sendMessage("§c你没有权限管理国家外交关系！需要国家管理员或更高权限。")
+            sender.sendMessage("§7当前权限等级: ${user.rank.name} (${user.rank.value})")
+            return
+        }
+
+        // 查找目标国家
+        val targetCountry = CountryManager.getByName(targetCountryName)
+        if (targetCountry == null) {
+            sender.sendMessage("§c找不到国家: $targetCountryName")
+            return
+        }
+
+        if (targetCountry.id == country.id) {
+            sender.sendMessage("§c不能与自己的国家建立外交关系！")
+            return
+        }
+
+        // 解析关系类型（只允许需要双方确认的类型）
+        val relationType = when (relationTypeStr.lowercase()) {
+            "neutral" -> RelationType.NEUTRAL
+            "friendly" -> RelationType.FRIENDLY
+            "allied" -> RelationType.ALLIED
+            "hostile" -> RelationType.HOSTILE
+            else -> {
+                sender.sendMessage("§c无效的关系类型！可用选项: allied (结盟), neutral (停战), friendly (友好), hostile (敌对)")
+                return
+            }
+        }
+
+        // 检查当前关系
+        val currentRelation = DiplomacyManager.getRelation(country, targetCountry)
+
+        // 验证请求的合理性
+        when (relationType) {
+            RelationType.ALLIED -> {
+                if (currentRelation.relationType == RelationType.WAR) {
+                    sender.sendMessage("§c战争期间无法结盟！请先发起停战请求。")
+                    return
+                }
+                if (currentRelation.relationType == RelationType.ALLIED) {
+                    sender.sendMessage("§c你的国家已经与 ${targetCountry.name} 结盟！")
+                    return
+                }
+            }
+            RelationType.NEUTRAL -> {
+                if (currentRelation.relationType == RelationType.NEUTRAL) {
+                    sender.sendMessage("§c你的国家已经与 ${targetCountry.name} 处于中立关系！")
+                    return
+                }
+            }
+            else -> {}
+        }
+
+        // 创建请求
+        val request = DiplomaticRequestManager.createRequest(country, targetCountry, relationType)
+        if (request == null) {
+            sender.sendMessage("§c已存在相同的待处理请求！请等待对方回应。")
+            return
+        }
+
+        val relationName = when (relationType) {
+            RelationType.NEUTRAL -> "停战"
+            RelationType.FRIENDLY -> "友好"
+            RelationType.ALLIED -> "结盟"
+            RelationType.HOSTILE -> "敌对"
+            else -> relationType.name
+        }
+
+        sender.sendMessage("§a成功向 ${targetCountry.name} 发起${relationName}请求！")
+        sender.sendMessage("§7请求将在24小时后过期，请等待对方回应。")
+    }
+
+    /**
+     * 列出所有外交请求
+     * 🔧 v1.3.63: 实现外交系统双方确认机制
+     */
+    private fun listDiplomaticRequests(sender: CommandSender) {
+        if (sender !is Player) {
+            sender.sendMessage("§c该命令只能由玩家执行！")
+            return
+        }
+
+        val user = sender.user()
+        val country = user.country
+        if (country == null) {
+            sender.sendMessage("§c你不属于任何国家！")
+            return
+        }
+
+        // 获取收到的请求
+        val receivedRequests = DiplomaticRequestManager.getReceivedRequests(country)
+        // 获取发出的请求
+        val sentRequests = DiplomaticRequestManager.getSentRequests(country)
+
+        sender.sendMessage("§6========== 外交请求 ==========")
+
+        // 显示收到的请求
+        if (receivedRequests.isNotEmpty()) {
+            sender.sendMessage("§e收到的请求:")
+            receivedRequests.forEach { request ->
+                val initiatorCountry = CountryManager.getCountry(request.initiatorCountryId)
+                if (initiatorCountry != null) {
+                    val relationName = when (request.requestType) {
+                        RelationType.NEUTRAL -> "停战"
+                        RelationType.FRIENDLY -> "友好"
+                        RelationType.ALLIED -> "结盟"
+                        RelationType.HOSTILE -> "敌对"
+                        else -> request.requestType.name
+                    }
+                    val remainingHours = request.getRemainingHours()
+                    sender.sendMessage("  §f${initiatorCountry.name} §7-> §e${relationName} §7(剩余${remainingHours}小时)")
+                    sender.sendMessage("    §7接受: /u diplomacy accept ${initiatorCountry.name}")
+                    sender.sendMessage("    §7拒绝: /u diplomacy reject ${initiatorCountry.name}")
+                }
+            }
+        } else {
+            sender.sendMessage("§7没有收到任何请求")
+        }
+
+        // 显示发出的请求
+        if (sentRequests.isNotEmpty()) {
+            sender.sendMessage("§e发出的请求:")
+            sentRequests.forEach { request ->
+                val targetCountry = CountryManager.getCountry(request.targetCountryId)
+                if (targetCountry != null) {
+                    val relationName = when (request.requestType) {
+                        RelationType.NEUTRAL -> "停战"
+                        RelationType.FRIENDLY -> "友好"
+                        RelationType.ALLIED -> "结盟"
+                        RelationType.HOSTILE -> "敌对"
+                        else -> request.requestType.name
+                    }
+                    val remainingHours = request.getRemainingHours()
+                    sender.sendMessage("  §f${targetCountry.name} §7<- §e${relationName} §7(剩余${remainingHours}小时)")
+                }
+            }
+        } else {
+            sender.sendMessage("§7没有发出任何请求")
+        }
+
+        sender.sendMessage("§6==============================")
+    }
+
+    /**
+     * 接受外交请求
+     * 🔧 v1.3.63: 实现外交系统双方确认机制
+     */
+    private fun acceptDiplomaticRequest(sender: CommandSender, initiatorCountryName: String) {
+        if (sender !is Player) {
+            sender.sendMessage("§c该命令只能由玩家执行！")
+            return
+        }
+
+        val user = sender.user()
+        val country = user.country
+        if (country == null) {
+            sender.sendMessage("§c你不属于任何国家！")
+            return
+        }
+
+        // 权限检查
+        if (!user.hasCountryPermission("manage_diplomacy")) {
+            sender.sendMessage("§c你没有权限管理国家外交关系！需要国家管理员或更高权限。")
+            sender.sendMessage("§7当前权限等级: ${user.rank.name} (${user.rank.value})")
+            return
+        }
+
+        // 查找发起国家
+        val initiatorCountry = CountryManager.getByName(initiatorCountryName)
+        if (initiatorCountry == null) {
+            sender.sendMessage("§c找不到国家: $initiatorCountryName")
+            return
+        }
+
+        // 查找请求
+        val receivedRequests = DiplomaticRequestManager.getReceivedRequests(country)
+        val request = receivedRequests.firstOrNull { it.initiatorCountryId == initiatorCountry.id }
+
+        if (request == null) {
+            sender.sendMessage("§c没有来自 ${initiatorCountry.name} 的待处理请求！")
+            return
+        }
+
+        // 接受请求
+        val success = DiplomaticRequestManager.acceptRequest(request, country)
+        if (success) {
+            val relationName = when (request.requestType) {
+                RelationType.NEUTRAL -> "停战"
+                RelationType.FRIENDLY -> "友好"
+                RelationType.ALLIED -> "结盟"
+                RelationType.HOSTILE -> "敌对"
+                else -> request.requestType.name
+            }
+            sender.sendMessage("§a成功接受 ${initiatorCountry.name} 的${relationName}请求！")
+        } else {
+            sender.sendMessage("§c接受请求失败！请求可能已过期或无效。")
+        }
+    }
+
+    /**
+     * 拒绝外交请求
+     * 🔧 v1.3.63: 实现外交系统双方确认机制
+     */
+    private fun rejectDiplomaticRequest(sender: CommandSender, initiatorCountryName: String) {
+        if (sender !is Player) {
+            sender.sendMessage("§c该命令只能由玩家执行！")
+            return
+        }
+
+        val user = sender.user()
+        val country = user.country
+        if (country == null) {
+            sender.sendMessage("§c你不属于任何国家！")
+            return
+        }
+
+        // 权限检查
+        if (!user.hasCountryPermission("manage_diplomacy")) {
+            sender.sendMessage("§c你没有权限管理国家外交关系！需要国家管理员或更高权限。")
+            sender.sendMessage("§7当前权限等级: ${user.rank.name} (${user.rank.value})")
+            return
+        }
+
+        // 查找发起国家
+        val initiatorCountry = CountryManager.getByName(initiatorCountryName)
+        if (initiatorCountry == null) {
+            sender.sendMessage("§c找不到国家: $initiatorCountryName")
+            return
+        }
+
+        // 查找请求
+        val receivedRequests = DiplomaticRequestManager.getReceivedRequests(country)
+        val request = receivedRequests.firstOrNull { it.initiatorCountryId == initiatorCountry.id }
+
+        if (request == null) {
+            sender.sendMessage("§c没有来自 ${initiatorCountry.name} 的待处理请求！")
+            return
+        }
+
+        // 拒绝请求
+        val success = DiplomaticRequestManager.rejectRequest(request, country)
+        if (success) {
+            val relationName = when (request.requestType) {
+                RelationType.NEUTRAL -> "停战"
+                RelationType.FRIENDLY -> "友好"
+                RelationType.ALLIED -> "结盟"
+                RelationType.HOSTILE -> "敌对"
+                else -> request.requestType.name
+            }
+            sender.sendMessage("§a成功拒绝 ${initiatorCountry.name} 的${relationName}请求。")
+        } else {
+            sender.sendMessage("§c拒绝请求失败！请求可能已过期或无效。")
         }
     }
 

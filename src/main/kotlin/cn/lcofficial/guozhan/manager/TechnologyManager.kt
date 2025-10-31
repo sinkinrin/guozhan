@@ -32,22 +32,19 @@ object TechnologyManager {
 
     /**
      * 初始化科技管理器
+     * 🔧 v1.3.55: 简化初始化流程 - 移除不必要的健康检查和主键验证
      */
     fun initialize() {
         Guozhan.instance.logger.info("正在初始化科技管理器...")
 
-        // 🔧 v1.3.51: 修复科技研发系统数据库错误 - 添加数据库健康检查和修复
-        performDatabaseHealthCheck()
+        // 清理旧的调度器和缓存
         cancelResearchSchedulers()
         resetCaches()
 
-
-        // 创建数据库表
+        // 创建数据库表（主键现在会自动创建）
         transaction {
             SchemaUtils.createMissingTablesAndColumns(Technologies, CountryTechnologies)
         }
-
-        ensureTechnologyTablePrimaryKey()
 
         // 🔧 v1.3.49: 修复科技研发系统外键约束错误 - 插入科技数据到数据库
         insertTechnologiesToDatabase()
@@ -181,354 +178,9 @@ object TechnologyManager {
     }
 
     /**
-     * 🔧 v1.3.51: 修复科技研发系统数据库错误 - 数据库健康检查和修复
+     * 🔧 v1.3.55: 已移除不必要的数据库健康检查函数
+     * 主键现在通过 Technologies 表的 primaryKey 定义自动创建
      */
-    private fun performDatabaseHealthCheck() {
-        try {
-            Guozhan.instance.logger.info("🔧 [数据库健康检查] 开始检查科技系统数据库完整性...")
-
-            // 1. 清理孤立的备份表
-            cleanupOrphanedBackupTables()
-
-            // 2. 验证表存在性和结构
-            validateTableStructure()
-
-            // 3. 验证外键约束
-            validateForeignKeyConstraints()
-
-            Guozhan.instance.logger.info("🔧 [数据库健康检查] 科技系统数据库健康检查完成")
-        } catch (e: Exception) {
-            Guozhan.instance.logger.severe("🔧 [数据库健康检查] 数据库健康检查失败，尝试自动修复: ${e.message}")
-            e.printStackTrace()
-            attemptAutoRepair()
-        }
-    }
-
-    /**
-     * 🔧 v1.3.51: 清理孤立的备份表
-     */
-    private fun cleanupOrphanedBackupTables() {
-        transaction {
-            try {
-                // 检查并删除所有可能的备份表
-                val backupTables = listOf(
-                    "gz_technologies_backup",
-                    "gz_country_technologies_backup",
-                    "gz_technologies_temp"
-                )
-
-                backupTables.forEach { tableName ->
-                    try {
-                        exec("DROP TABLE IF EXISTS $tableName")
-                        Guozhan.instance.logger.info("🔧 [清理备份表] 已清理备份表: $tableName")
-                    } catch (e: Exception) {
-                        Guozhan.instance.logger.warning("⚠️ [清理备份表] 清理备份表$tableName 失败: ${e.message}")
-                    }
-                }
-            } catch (e: Exception) {
-                Guozhan.instance.logger.warning("⚠️ [清理备份表] 清理备份表过程中出错: ${e.message}")
-            }
-        }
-    }
-
-    /**
-     * 🔧 v1.3.51: 验证表结构
-     */
-    private fun validateTableStructure() {
-        transaction {
-            try {
-                // 检查 gz_technologies 表是否存在且结构正确
-                val techTableExists = exec("SELECT name FROM sqlite_master WHERE type='table' AND name='gz_technologies'") { rs ->
-                    rs.next()
-                } ?: false
-
-                if (!techTableExists) {
-                    Guozhan.instance.logger.warning("⚠️ [表结构验证] gz_technologies 表不存在，将重新创建")
-                    SchemaUtils.create(Technologies)
-                }
-
-                // 检查 gz_country_technologies 表是否存在且结构正确
-                val countryTechTableExists = exec("SELECT name FROM sqlite_master WHERE type='table' AND name='gz_country_technologies'") { rs ->
-                    rs.next()
-                } ?: false
-
-                if (!countryTechTableExists) {
-                    Guozhan.instance.logger.warning("⚠️ [表结构验证] gz_country_technologies 表不存在，将重新创建")
-                    SchemaUtils.create(CountryTechnologies)
-                }
-
-                Guozhan.instance.logger.info("🔧 [表结构验证] 表结构验证完成")
-            } catch (e: Exception) {
-                Guozhan.instance.logger.severe("🔧 [表结构验证] 表结构验证失败: ${e.message}")
-                throw e
-            }
-        }
-    }
-
-    /**
-     * 🔧 v1.3.51: 验证外键约束
-     */
-    private fun validateForeignKeyConstraints(): Boolean {
-        return transaction {
-            try {
-                // 检查外键约束状态
-                val foreignKeysEnabled = exec("PRAGMA foreign_keys") { rs ->
-                    if (rs.next()) rs.getInt(1) == 1 else false
-                } ?: false
-
-                if (!foreignKeysEnabled) {
-                    Guozhan.instance.logger.warning("⚠️ [外键约束验证] 外键约束未启用，正在启用...")
-                    exec("PRAGMA foreign_keys=on")
-                }
-
-                // 检查外键约束违规
-                val violations = exec("PRAGMA foreign_key_check") { rs ->
-                    val violations = mutableListOf<String>()
-                    while (rs.next()) {
-                        violations.add("表: ${rs.getString(1)}, 行ID: ${rs.getString(2)}, 父表: ${rs.getString(3)}, 外键ID: ${rs.getString(4)}")
-                    }
-                    violations
-                } ?: emptyList()
-
-                if (violations.isNotEmpty()) {
-                    Guozhan.instance.logger.severe("🔧 [外键约束验证] 发现外键约束违规:")
-                    violations.forEach { violation ->
-                        Guozhan.instance.logger.severe("  - $violation")
-                    }
-                    return@transaction false
-                }
-
-                Guozhan.instance.logger.info("🔧 [外键约束验证] 外键约束验证通过")
-                true
-            } catch (e: Exception) {
-                Guozhan.instance.logger.severe("🔧 [外键约束验证] 外键约束验证失败: ${e.message}")
-                false
-            }
-        }
-    }
-
-    /**
-     * 🔧 v1.3.51: 尝试自动修复数据库问题
-     * 🔧 v1.3.52: 修复数据丢失风险 - 只有在备份数据完整可用时才执行删除和重建操作
-     */
-    private fun attemptAutoRepair() {
-        try {
-            Guozhan.instance.logger.info("🔧 [自动修复] 开始尝试自动修复数据库问题...")
-
-            transaction {
-                // 1. 关闭外键约束
-                exec("PRAGMA foreign_keys=off")
-
-                try {
-                    // 2. 备份现有数据
-                    val existingTechData = try {
-                        Technologies.selectAll().toList()
-                    } catch (e: Exception) {
-                        Guozhan.instance.logger.warning("⚠️ [自动修复] 无法读取现有科技数据: ${e.message}")
-                        null // 🔧 使用 null 表示备份失败
-                    }
-
-                    val existingResearchData = try {
-                        CountryTechnologies.selectAll().toList()
-                    } catch (e: Exception) {
-                        Guozhan.instance.logger.warning("⚠️ [自动修复] 无法读取现有研究数据: ${e.message}")
-                        null // 🔧 使用 null 表示备份失败
-                    }
-
-                    // 🔧 v1.3.52: 安全检查 - 只有在备份数据完整可用时才执行删除操作
-                    if (existingTechData == null || existingResearchData == null) {
-                        Guozhan.instance.logger.severe("❌ [自动修复] 备份数据不完整，终止自动修复流程以避免数据丢失")
-                        Guozhan.instance.logger.severe("❌ [自动修复] 建议人工干预：")
-                        Guozhan.instance.logger.severe("   1. 检查数据库文件是否损坏")
-                        Guozhan.instance.logger.severe("   2. 尝试手动备份数据库文件")
-                        Guozhan.instance.logger.severe("   3. 联系管理员进行数据恢复")
-                        return@transaction // 🔧 立即终止修复流程
-                    }
-
-                    // 🔧 v1.3.52: 验证备份数据的完整性
-                    val techDataCount = existingTechData.size
-                    val researchDataCount = existingResearchData.size
-                    Guozhan.instance.logger.info("🔧 [自动修复] 备份数据完整性检查：科技数据 ${techDataCount} 条，研究数据 ${researchDataCount} 条")
-
-                    // 3. 删除所有相关表（只有在备份数据可用时才执行）
-                    try {
-                        SchemaUtils.drop(CountryTechnologies)
-                        Guozhan.instance.logger.info("🔧 [自动修复] 已删除 CountryTechnologies 表")
-                    } catch (e: Exception) {
-                        Guozhan.instance.logger.severe("❌ [自动修复] 删除 CountryTechnologies 表失败: ${e.message}")
-                        throw e // 🔧 抛出异常，触发回滚
-                    }
-
-                    try {
-                        SchemaUtils.drop(Technologies)
-                        Guozhan.instance.logger.info("🔧 [自动修复] 已删除 Technologies 表")
-                    } catch (e: Exception) {
-                        Guozhan.instance.logger.severe("❌ [自动修复] 删除 Technologies 表失败: ${e.message}")
-                        throw e // 🔧 抛出异常，触发回滚
-                    }
-
-                    // 4. 重新创建表
-                    SchemaUtils.create(Technologies, CountryTechnologies)
-                    Guozhan.instance.logger.info("🔧 [自动修复] 已重新创建表结构")
-
-                    // 5. 恢复科技数据
-                    var techRestoreSuccess = 0
-                    var techRestoreFailed = 0
-                    existingTechData.forEach { row ->
-                        try {
-                            Technologies.insert {
-                                it[Technologies.id] = row[Technologies.id]
-                                it[Technologies.name] = row[Technologies.name]
-                                it[Technologies.description] = row[Technologies.description]
-                                it[Technologies.icon] = row[Technologies.icon]
-                                it[Technologies.maxLevel] = row[Technologies.maxLevel]
-                                it[Technologies.prerequisites] = row[Technologies.prerequisites]
-                                it[Technologies.costs] = row[Technologies.costs]
-                                it[Technologies.effects] = row[Technologies.effects]
-                                it[Technologies.category] = row[Technologies.category]
-                                it[Technologies.enabled] = row[Technologies.enabled]
-                            }
-                            techRestoreSuccess++
-                        } catch (e: Exception) {
-                            techRestoreFailed++
-                            Guozhan.instance.logger.warning("⚠️ [自动修复] 恢复科技数据失败 (${row[Technologies.id]}): ${e.message}")
-                        }
-                    }
-                    Guozhan.instance.logger.info("🔧 [自动修复] 科技数据恢复完成：成功 ${techRestoreSuccess} 条，失败 ${techRestoreFailed} 条")
-
-                    // 6. 恢复研究数据
-                    var researchRestoreSuccess = 0
-                    var researchRestoreFailed = 0
-                    existingResearchData.forEach { row ->
-                        try {
-                            CountryTechnologies.insert {
-                                it[CountryTechnologies.countryId] = row[CountryTechnologies.countryId]
-                                it[CountryTechnologies.technologyId] = row[CountryTechnologies.technologyId]
-                                it[CountryTechnologies.level] = row[CountryTechnologies.level]
-                                it[CountryTechnologies.researchStartTime] = row[CountryTechnologies.researchStartTime]
-                                it[CountryTechnologies.researchEndTime] = row[CountryTechnologies.researchEndTime]
-                                it[CountryTechnologies.isResearching] = row[CountryTechnologies.isResearching]
-                            }
-                            researchRestoreSuccess++
-                        } catch (e: Exception) {
-                            researchRestoreFailed++
-                            Guozhan.instance.logger.warning("⚠️ [自动修复] 恢复研究数据失败: ${e.message}")
-                        }
-                    }
-                    Guozhan.instance.logger.info("🔧 [自动修复] 研究数据恢复完成：成功 ${researchRestoreSuccess} 条，失败 ${researchRestoreFailed} 条")
-
-                    // 🔧 v1.3.52: 验证恢复结果
-                    if (techRestoreFailed > 0 || researchRestoreFailed > 0) {
-                        Guozhan.instance.logger.warning("⚠️ [自动修复] 部分数据恢复失败，请检查日志并考虑人工干预")
-                    }
-
-                } finally {
-                    // 7. 重新启用外键约束
-                    exec("PRAGMA foreign_keys=on")
-                }
-            }
-
-            Guozhan.instance.logger.info("🔧 [自动修复] 数据库自动修复完成")
-        } catch (e: Exception) {
-            Guozhan.instance.logger.severe("🔧 [自动修复] 数据库自动修复失败: ${e.message}")
-            Guozhan.instance.logger.severe("❌ [自动修复] 建议人工干预：")
-            Guozhan.instance.logger.severe("   1. 停止服务器")
-            Guozhan.instance.logger.severe("   2. 备份数据库文件 (plugins/Guozhan/guozhan.db)")
-            Guozhan.instance.logger.severe("   3. 检查数据库完整性")
-            Guozhan.instance.logger.severe("   4. 联系管理员进行数据恢复")
-            e.printStackTrace()
-        }
-    }
-
-    private fun ensureTechnologyTablePrimaryKey() {
-        transaction {
-            val columnInfo = exec("PRAGMA table_info('gz_technologies')") { rs ->
-                val info = mutableListOf<Pair<String, Int>>()
-                while (rs.next()) {
-                    info += rs.getString("name") to rs.getInt("pk")
-                }
-                info
-            } ?: emptyList()
-
-            val hasPrimaryKey = columnInfo.any { (name, isPk) -> name.equals("id", ignoreCase = true) && isPk > 0 }
-
-            if (!hasPrimaryKey && columnInfo.isNotEmpty()) {
-                Guozhan.instance.logger.warning("⚠️ 检测到 gz_technologies 表缺少主键，将自动重建以修复外键约束")
-                rebuildTechnologyTableSafely()
-            }
-        }
-    }
-
-    /**
-     * 🔧 v1.3.51: 安全地重建科技表
-     */
-    private fun rebuildTechnologyTableSafely() {
-        transaction {
-            val startTime = System.currentTimeMillis()
-            val jdbcConnection = this.connection.connection as Connection
-
-            fun execute(sql: String) {
-                jdbcConnection.createStatement().use { stmt ->
-                    stmt.execute(sql)
-                }
-            }
-
-            // 使用时间戳创建唯一的临时表名，避免冲突
-            val tempTableName = "gz_technologies_temp_${System.currentTimeMillis()}"
-
-            try {
-                // 1. 清理任何可能存在的备份表
-                execute("DROP TABLE IF EXISTS gz_technologies_backup")
-                execute("DROP TABLE IF EXISTS $tempTableName")
-
-                // 2. 关闭外键约束
-                execute("PRAGMA foreign_keys=off")
-
-                // 3. 创建临时表并复制数据
-                execute("CREATE TABLE $tempTableName AS SELECT * FROM gz_technologies")
-
-                // 4. 删除原表
-                execute("DROP TABLE gz_technologies")
-
-                // 5. 重新创建表（使用Exposed的schema）
-                SchemaUtils.create(Technologies)
-
-                // 6. 从临时表恢复数据
-                execute(
-                    """
-                    INSERT INTO gz_technologies (id, name, description, icon, max_level, prerequisites, costs, effects, category, enabled)
-                    SELECT id, name, description, icon, max_level, prerequisites, costs, effects, category, enabled
-                    FROM $tempTableName
-                    """.trimIndent()
-                )
-
-                val duration = System.currentTimeMillis() - startTime
-                Guozhan.instance.logger.info("🔧 已安全重建 gz_technologies 表，耗时 ${duration}ms")
-
-            } catch (e: Exception) {
-                Guozhan.instance.logger.severe("🔧 安全重建 gz_technologies 表失败: ${e.message}")
-                e.printStackTrace()
-
-                // 尝试恢复：如果临时表存在，尝试恢复数据
-                try {
-                    execute("DROP TABLE IF EXISTS gz_technologies")
-                    execute("ALTER TABLE $tempTableName RENAME TO gz_technologies")
-                    Guozhan.instance.logger.info("🔧 已从临时表恢复 gz_technologies 表")
-                } catch (recoverException: Exception) {
-                    Guozhan.instance.logger.severe("🔧 从临时表恢复失败: ${recoverException.message}")
-                }
-            } finally {
-                // 7. 清理临时表并重新启用外键约束
-                try {
-                    execute("DROP TABLE IF EXISTS $tempTableName")
-                } catch (e: Exception) {
-                    Guozhan.instance.logger.warning("⚠️ 清理临时表失败: ${e.message}")
-                }
-
-                execute("PRAGMA foreign_keys=on")
-            }
-        }
-    }
 
     /**
      * 🔧 v1.3.49: 序列化科技成本数据
@@ -718,12 +370,7 @@ object TechnologyManager {
         // 🔧 v1.3.47: 完全异步化，在GlobalRegionScheduler中执行状态修改
         cn.lcofficial.guozhan.util.run {
             try {
-                // 🔧 v1.3.51: 修复科技研发系统数据库错误 - 预检查数据库完整性
-                if (!validateTechnologyDatabaseIntegrity(technologyId)) {
-                    Guozhan.instance.logger.warning("科技研究开始前数据库完整性检查失败：科技 ${technologyId}")
-                    callback(false)
-                    return@run
-                }
+                // 🔧 v1.3.55: 已移除数据库完整性检查 - 主键现在自动创建，无需预检查
 
                 // 🔧 v1.3.42: 修复科技研究资源扣费竞态 - 再次验证资源是否充足
                 if (country.gold < totalGoldCost || country.diamond < cost.diamond) {
@@ -762,14 +409,19 @@ object TechnologyManager {
                         throw IllegalStateException("科技记录不存在: $technologyId，无法开始研究")
                     }
 
-                    // 扣除资源
-                    country.diamond -= cost.diamond
-                    country.gold -= totalGoldCost
+                    // 🔧 v1.3.67: 修复High问题2 - 先计算预期余额，验证通过后再扣除资源
+                    // 避免扣除后验证失败导致内存中的Country对象资源变为负数
+                    val expectedGold = country.gold - totalGoldCost
+                    val expectedDiamond = country.diamond - cost.diamond
 
-                    // 扣费后验证资源是否充足，如果不足则抛出异常回滚整个transaction
-                    if (country.gold < 0 || country.diamond < 0) {
-                        throw IllegalStateException("科技研究扣费后资源不足：国家 ${country.name}，金币${country.gold}，钻石${country.diamond}")
+                    // 先验证预期余额是否充足
+                    if (expectedGold < 0 || expectedDiamond < 0) {
+                        throw IllegalStateException("科技研究扣费后资源不足：国家 ${country.name}，需要金币${totalGoldCost}，钻石${cost.diamond}，当前金币${country.gold}，钻石${country.diamond}")
                     }
+
+                    // 验证通过后再扣除资源
+                    country.diamond = expectedDiamond
+                    country.gold = expectedGold
 
                     // 保存国家资源变更
                     country.save()
@@ -833,28 +485,9 @@ object TechnologyManager {
 
                 callback(true)
             } catch (e: Exception) {
-                // 🔧 v1.3.51: 修复科技研发系统数据库错误 - 增强的错误处理和自动恢复
-                when {
-                    e.message?.contains("gz_technologies_backup") == true -> {
-                        Guozhan.instance.logger.severe("🔧 [科技研究错误] 检测到备份表问题，执行紧急修复: ${e.message}")
-                        handleBackupTableError(country, technologyId, callback)
-                        return@run
-                    }
-                    e.message?.contains("foreign key") == true -> {
-                        Guozhan.instance.logger.severe("🔧 [科技研究错误] 检测到外键约束问题，执行数据库修复: ${e.message}")
-                        handleForeignKeyError(country, technologyId, callback)
-                        return@run
-                    }
-                    e.message?.contains("no such table") == true -> {
-                        Guozhan.instance.logger.severe("🔧 [科技研究错误] 检测到表缺失问题，执行表重建: ${e.message}")
-                        handleMissingTableError(country, technologyId, callback)
-                        return@run
-                    }
-                    else -> {
-                        Guozhan.instance.logger.severe("科技研究过程中出错: ${e.message}")
-                        e.printStackTrace()
-                    }
-                }
+                // 🔧 v1.3.55: 简化错误处理 - 主键现在自动创建，无需复杂的错误恢复
+                Guozhan.instance.logger.severe("科技研究过程中出错: ${e.message}")
+                e.printStackTrace()
 
                 // 清理可能的缓存状态（transaction已自动回滚数据库和资源）
                 try {
@@ -871,223 +504,9 @@ object TechnologyManager {
     }
 
     /**
-     * 🔧 v1.3.51: 验证科技数据库完整性
+     * 🔧 v1.3.55: 已移除不必要的错误处理函数
+     * 主键现在自动创建，无需复杂的错误恢复逻辑
      */
-    private fun validateTechnologyDatabaseIntegrity(technologyId: String): Boolean {
-        return try {
-            transaction {
-                // 检查科技表是否存在
-                val techTableExists = exec("SELECT name FROM sqlite_master WHERE type='table' AND name='gz_technologies'") { rs ->
-                    rs.next()
-                } ?: false
-
-                if (!techTableExists) {
-                    Guozhan.instance.logger.warning("⚠️ [数据库完整性] gz_technologies 表不存在")
-                    return@transaction false
-                }
-
-                // 检查科技记录是否存在
-                val techExists = Technologies.selectAll().where { Technologies.id eq technologyId }.count() > 0
-                if (!techExists) {
-                    Guozhan.instance.logger.warning("⚠️ [数据库完整性] 科技记录不存在: $technologyId")
-                    return@transaction false
-                }
-
-                // 检查外键约束状态
-                val foreignKeysEnabled = exec("PRAGMA foreign_keys") { rs ->
-                    if (rs.next()) rs.getInt(1) == 1 else false
-                } ?: false
-
-                if (!foreignKeysEnabled) {
-                    Guozhan.instance.logger.warning("⚠️ [数据库完整性] 外键约束未启用")
-                    exec("PRAGMA foreign_keys=on")
-                }
-
-                true
-            }
-        } catch (e: Exception) {
-            Guozhan.instance.logger.severe("🔧 [数据库完整性] 验证失败: ${e.message}")
-            false
-        }
-    }
-
-    /**
-     * 🔧 v1.3.51: 处理备份表错误
-     */
-    private fun handleBackupTableError(country: Country, technologyId: String, callback: (Boolean) -> Unit) {
-        try {
-            Guozhan.instance.logger.info("🔧 [错误恢复] 开始处理备份表错误...")
-
-            // 清理备份表并重新初始化
-            cleanupOrphanedBackupTables()
-            validateTableStructure()
-            insertTechnologiesToDatabase()
-
-            // 重试科技研究
-            Guozhan.instance.logger.info("🔧 [错误恢复] 备份表问题已修复，重试科技研究...")
-            startResearchRetry(country, technologyId, callback)
-
-        } catch (e: Exception) {
-            Guozhan.instance.logger.severe("🔧 [错误恢复] 处理备份表错误失败: ${e.message}")
-            callback(false)
-        }
-    }
-
-    /**
-     * 🔧 v1.3.51: 处理外键约束错误
-     */
-    private fun handleForeignKeyError(country: Country, technologyId: String, callback: (Boolean) -> Unit) {
-        try {
-            Guozhan.instance.logger.info("🔧 [错误恢复] 开始处理外键约束错误...")
-
-            // 验证并修复外键约束
-            if (!validateForeignKeyConstraints()) {
-                attemptAutoRepair()
-            }
-
-            // 确保科技数据存在
-            insertTechnologiesToDatabase()
-
-            // 重试科技研究
-            Guozhan.instance.logger.info("🔧 [错误恢复] 外键约束问题已修复，重试科技研究...")
-            startResearchRetry(country, technologyId, callback)
-
-        } catch (e: Exception) {
-            Guozhan.instance.logger.severe("🔧 [错误恢复] 处理外键约束错误失败: ${e.message}")
-            callback(false)
-        }
-    }
-
-    /**
-     * 🔧 v1.3.51: 处理表缺失错误
-     */
-    private fun handleMissingTableError(country: Country, technologyId: String, callback: (Boolean) -> Unit) {
-        try {
-            Guozhan.instance.logger.info("🔧 [错误恢复] 开始处理表缺失错误...")
-
-            // 重新创建表
-            transaction {
-                SchemaUtils.createMissingTablesAndColumns(Technologies, CountryTechnologies)
-            }
-
-            // 插入科技数据
-            insertTechnologiesToDatabase()
-
-            // 重试科技研究
-            Guozhan.instance.logger.info("🔧 [错误恢复] 表缺失问题已修复，重试科技研究...")
-            startResearchRetry(country, technologyId, callback)
-
-        } catch (e: Exception) {
-            Guozhan.instance.logger.severe("🔧 [错误恢复] 处理表缺失错误失败: ${e.message}")
-            callback(false)
-        }
-    }
-
-    /**
-     * 🔧 v1.3.51: 重试科技研究（简化版本，避免无限递归）
-     */
-    private fun startResearchRetry(country: Country, technologyId: String, callback: (Boolean) -> Unit) {
-        try {
-            val technology = getTechnology(technologyId)
-            if (technology == null) {
-                callback(false)
-                return
-            }
-
-            val currentLevel = getCountryTechLevel(country, technologyId)
-            val targetLevel = currentLevel + 1
-            val cost = technology.getCost(targetLevel)
-            if (cost == null) {
-                callback(false)
-                return
-            }
-
-            // 计算总金币成本
-            var totalGoldCost = cost.gold
-            if (cost.territoryIncome > 0) {
-                val hourlyIncome = RegionalTaxSystem.calculateTotalGoldTaxPerHour(country)
-                val additionalCost = ceil(cost.territoryIncome * hourlyIncome).toInt()
-                totalGoldCost += additionalCost
-            }
-
-            // 检查资源是否充足
-            if (country.gold < totalGoldCost || country.diamond < cost.diamond) {
-                cancelProgressNotifications(country.id, technologyId)
-                callback(false)
-                return
-            }
-
-            // 简化的研究逻辑（不再递归调用startResearch）
-            val researchTime = calculateResearchTime(technology, targetLevel)
-            val startTime = System.currentTimeMillis()
-            val endTime = startTime + researchTime
-
-            val countryTech = CountryTechnology(
-                countryId = country.id,
-                technologyId = technologyId,
-                level = currentLevel,
-                researchStartTime = startTime,
-                researchEndTime = endTime,
-                isResearching = true
-            )
-
-            transaction {
-                // 验证科技存在
-                val techExists = Technologies.selectAll().where { Technologies.id eq technologyId }.count() > 0
-                if (!techExists) {
-                    throw IllegalStateException("重试时科技记录仍不存在: $technologyId")
-                }
-
-                // 扣除资源
-                country.diamond -= cost.diamond
-                country.gold -= totalGoldCost
-                country.save()
-
-                // 🔧 v1.3.51: 修复科技研发失败 - 使用安全的插入/更新方式替代replace操作
-                // 避免SQLite在外键约束检查时引用不存在的备份表
-
-                // 先删除现有记录（如果存在）
-                CountryTechnologies.deleteWhere {
-                    (CountryTechnologies.countryId eq country.id.toString()) and
-                    (CountryTechnologies.technologyId eq technologyId)
-                }
-
-                // 然后插入新记录
-                CountryTechnologies.insert {
-                    it[CountryTechnologies.countryId] = country.id.toString()
-                    it[CountryTechnologies.technologyId] = technologyId
-                    it[CountryTechnologies.level] = currentLevel
-                    it[CountryTechnologies.researchStartTime] = startTime
-                    it[CountryTechnologies.researchEndTime] = endTime
-                    it[CountryTechnologies.isResearching] = true
-                }
-            }
-
-            // 更新缓存
-            countryTechnologies.computeIfAbsent(country.id) { ConcurrentHashMap() }[technologyId] = countryTech
-            researchingTechnologies.computeIfAbsent(country.id) { ConcurrentHashMap.newKeySet() }.add(technologyId)
-
-            Guozhan.instance.logger.info("🔧 [错误恢复] 国家 ${country.name} 成功重试研究科技 ${technology.name} 等级 $targetLevel")
-
-            // 设置研究完成任务
-            if (researchTime == 0L) {
-                completeResearch(country, technologyId)
-            } else {
-                val delayTicks = (researchTime / 50L).coerceAtLeast(1L)
-                cn.lcofficial.guozhan.util.runLater(delayTicks) { _ ->
-                    if (isResearching(country, technologyId)) {
-                        completeResearch(country, technologyId)
-                    }
-                }
-            }
-
-            callback(true)
-
-        } catch (e: Exception) {
-            Guozhan.instance.logger.severe("🔧 [错误恢复] 重试科技研究失败: ${e.message}")
-            callback(false)
-        }
-    }
 
     /**
      * 完成科技研究

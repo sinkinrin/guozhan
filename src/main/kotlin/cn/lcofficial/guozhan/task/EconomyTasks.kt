@@ -13,23 +13,28 @@ import cn.lcofficial.guozhan.util.run
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask
 import org.bukkit.Bukkit
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * 经济系统相关的定时任务
  */
 object EconomyTasks {
-    
+
     // 自动收税间隔（ticks）
     private const val AUTO_TAX_INTERVAL = 20 * 60 * 60 * 24 // 24小时
-    
+
     // 区域税收间隔（ticks）
     private const val REGIONAL_TAX_INTERVAL = 20 * 60 * 60 // 1小时
-    
+
     // 资源生成间隔（ticks）
     private const val RESOURCE_GENERATION_INTERVAL = 20 * 60 * 60 * 3 // 3小时
-    
+
     // 区域税收任务实例
     private lateinit var taxCollectionTask: TaxCollectionTask
+
+    // 🔧 v1.3.66: 修复High问题2 - 税收任务竞态条件锁
+    // 确保同一时间只有一个税收任务在执行，防止累积值被覆盖
+    internal val taxCollectionLock = AtomicBoolean(false)
     
     /**
      * 启动所有经济相关的定时任务
@@ -38,17 +43,19 @@ object EconomyTasks {
     fun startTasks() {
         val plugin = Guozhan.instance
 
-        // 启动自动收税任务 - 使用Folia调度器
-        runRepeat(AUTO_TAX_INTERVAL.toLong(), AUTO_TAX_INTERVAL.toLong()) { task ->
-            try {
-                collectTaxes()
-            } catch (e: Exception) {
-                plugin.logger.severe("自动收税任务执行出错: ${e.message}")
-                e.printStackTrace()
-            }
-        }
+        // 🔧 v1.3.68: 修复Critical问题1 - 移除每日自动收税任务，避免与小时任务重复结算
+        // 每日任务直接按24小时计算税收，无视lastAutoTaxTime，与小时任务叠加导致重复结算
+        // 现在只保留小时任务（TaxCollectionTask），确保税收计算基于真实时间戳
+        // runRepeat(AUTO_TAX_INTERVAL.toLong(), AUTO_TAX_INTERVAL.toLong()) { task ->
+        //     try {
+        //         collectTaxes()
+        //     } catch (e: Exception) {
+        //         plugin.logger.severe("自动收税任务执行出错: ${e.message}")
+        //         e.printStackTrace()
+        //     }
+        // }
 
-        // 启动区域税收任务
+        // 启动区域税收任务（每小时）
         taxCollectionTask = TaxCollectionTask()
         taxCollectionTask.start()
 
@@ -62,7 +69,7 @@ object EconomyTasks {
             }
         }
 
-        plugin.logger.info("经济系统定时任务已启动(Folia GlobalRegionScheduler)")
+        plugin.logger.info("🔧 v1.3.68: 经济系统定时任务已启动 - 仅启用小时税收任务，已移除每日重复结算任务")
     }
 
     /**
@@ -80,9 +87,17 @@ object EconomyTasks {
      * 自动收税任务
      * 🔧 v1.3.23: 修复数据竞争问题 - 在异步线程中只计算，在主线程中修改Country对象
      * 🔧 v1.3.52: 修复数据竞态 - 在主线程创建不可变快照，避免异步线程访问可变Country字段
+     * 🔧 v1.3.66: 修复High问题2 - 添加锁机制防止与TaxCollectionTask竞态
      */
     private fun collectTaxes() {
         val plugin = Guozhan.instance
+
+        // 🔧 v1.3.66: 检查是否有其他税收任务正在执行
+        if (!taxCollectionLock.compareAndSet(false, true)) {
+            plugin.logger.warning("🔧 [税收系统] 每日税收任务跳过：检测到其他税收任务正在执行，避免竞态条件")
+            return
+        }
+
         val startTime = System.currentTimeMillis()
 
         // 🔧 v1.3.52: 在主线程创建Country数据的不可变快照
@@ -198,6 +213,9 @@ object EconomyTasks {
             } catch (e: Exception) {
                 plugin.logger.severe("自动收税任务执行出错: ${e.message}")
                 e.printStackTrace()
+            } finally {
+                // 🔧 v1.3.66: 释放税收任务锁
+                taxCollectionLock.set(false)
             }
         }
     }

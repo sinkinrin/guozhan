@@ -29,6 +29,9 @@ class LoyaltySystem {
         // 🔧 v1.3.52: 修复High问题H2 - 添加重试次数限制，防止内存泄漏
         const val MAX_RETRY_COUNT = 3 // 最多重试3次
         const val RETRY_TIMEOUT_MS = 30 * 60 * 1000L // 30分钟后放弃重试
+
+        // 🔧 v1.3.64: 更新版本号
+        const val VERSION = "v1.3.64"
     }
 
     // 🔧 v1.3.37: 新增批量保存机制 - 收集需要保存的领土，减少数据库写入频率
